@@ -13,7 +13,6 @@ from PySide6.QtGui import QIcon, QFont, QTextCursor, QAction
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer
 from ansi2html import Ansi2HTMLConverter
 from config import get_resources, USER_COMMAND_LIST, USER_PORT_LIST
-from utils import expand_ansi_tabs, expand_ansi_cursor_right
 
 # Helper for serial port listing
 import serial.tools.list_ports
