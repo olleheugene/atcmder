@@ -1,0 +1,92 @@
+[
+    {
+        "index": 0,
+        "checked": true,
+        "title": {
+            "text": "Updated AT Command",
+            "disabled": true
+        },
+        "time": 5.0
+    },
+    {
+        "index": 1,
+        "checked": true,
+        "title": {
+            "text": "ATZ",
+            "disabled": false
+        },
+        "time": 2.0
+    },
+    {
+        "index": 2,
+        "checked": true,
+        "title": {
+            "text": "ATM",
+            "disabled": false
+        },
+        "time": 0.5
+    },
+    {
+        "index": 3,
+        "checked": true,
+        "title": {
+            "text": "AAA",
+            "disabled": false
+        },
+        "time": 0.5
+    },
+    {
+        "index": 4,
+        "checked": false,
+        "title": {
+            "text": "",
+            "disabled": false
+        },
+        "time": 0.5
+    },
+    {
+        "index": 5,
+        "checked": false,
+        "title": {
+            "text": "",
+            "disabled": false
+        },
+        "time": 0.5
+    },
+    {
+        "index": 6,
+        "checked": false,
+        "title": {
+            "text": "",
+            "disabled": false
+        },
+        "time": 0.5
+    },
+    {
+        "index": 7,
+        "checked": false,
+        "title": {
+            "text": "",
+            "disabled": false
+        },
+        "time": 0.5
+    },
+    {
+        "index": 8,
+        "checked": false,
+        "title": {
+            "text": "",
+            "disabled": false
+        },
+        "time": 0.5
+    },
+    {
+        "index": 9,
+        "checked": false,
+        "title": {
+            "text": "",
+            "disabled": false
+        },
+        "time": 0.5
+    }
+]
