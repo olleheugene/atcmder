@@ -41,7 +41,7 @@ class SerialTerminal(QMainWindow):
         self.baudrate = baudrate
         self.status = self.statusBar()
         self.update_status_bar("Disconnected")
-        self.author_label = QLabel("By Eugene Yu with AI")
+        self.author_label = QLabel("By OllehEugene with AI")
         self.author_label.setStyleSheet("color: #888; margin-left: 12px;")
         self.status.addPermanentWidget(self.author_label)
         menubar = self.menuBar()
@@ -59,7 +59,7 @@ class SerialTerminal(QMainWindow):
         default_action = QAction("Default", self)
         light_action.triggered.connect(lambda: self.apply_theme("light.css"))
         dark_action.triggered.connect(lambda: self.apply_theme("dark.css"))
-        default_action.triggered.connect(lambda: self.apply_theme("default.css"))
+        default_action.triggered.connect(lambda: self.apply_theme("default"))
         theme_menu.addAction(light_action)
         theme_menu.addAction(dark_action)
         theme_menu.addAction(default_action)
@@ -103,7 +103,7 @@ class SerialTerminal(QMainWindow):
             row_layout = QHBoxLayout()
             checkbox = QCheckBox()
             lineedit = QLineEdit()
-            lineedit.setAlignment(Qt.AlignCenter)  # 중앙 정렬 적용
+            lineedit.setAlignment(Qt.AlignCenter) 
             send_btn = QPushButton("Send")
             send_btn.clicked.connect(lambda _, idx=i: self.send_lineedit_command(idx))
             checkbox.stateChanged.connect(lambda _, idx=i: self.save_checkbox_lineedit_to_json(USER_COMMAND_LIST))
@@ -129,7 +129,7 @@ class SerialTerminal(QMainWindow):
         self.clear_btn = QPushButton()
         self.clear_btn.setIcon(QIcon(get_resources("clear.png")))
         self.clear_btn.setFixedSize(24, 24)
-        self.clear_btn.setToolTip("출력창 지우기")
+        self.clear_btn.setToolTip("Clean terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
         textedit_layout = QVBoxLayout()
         textedit_layout.setContentsMargins(0, 0, 8, 12)
@@ -144,7 +144,7 @@ class SerialTerminal(QMainWindow):
         self.toggle_btn = QPushButton()
         self.toggle_btn.setFixedWidth(24)
         self.toggle_btn.setCheckable(True)
-        self.toggle_btn.setToolTip("왼쪽 패널 숨기기/보이기")
+        self.toggle_btn.setToolTip("Expand/Collapse the terminal window")
         self.toggle_btn.setIcon(QIcon(get_resources("left-3arrow.png")))
         self.toggle_btn.clicked.connect(self.toggle_left_panel)
         btn_widget = QWidget()
@@ -184,13 +184,13 @@ class SerialTerminal(QMainWindow):
         self.port_monitor_timer.start(1000)
 
     def closeEvent(self, event):
-        self.save_recent_ports()
+        if self.selected_port:
+            self.save_recent_port(self.selected_port)
         if self.serial and self.serial.is_open:
             self.serial.close()
         event.accept()
 
     def load_recent_ports(self):
-        # 최근 포트 리스트를 USER_PORT_LIST에서 불러옴
         try:
             with open(USER_PORT_LIST, "r", encoding="utf-8") as f:
                 ports = json.load(f)
@@ -211,7 +211,6 @@ class SerialTerminal(QMainWindow):
             return []
 
     def save_recent_port(self, port):
-        # 연결 성공 시, 최근 포트 리스트에 저장 (중복 제거, 5개 유지, index 재정렬)
         ports = self.load_recent_ports()
         # Remove if already exists
         ports = [p for p in ports if p['settings'].get('port') != port]
@@ -238,23 +237,24 @@ class SerialTerminal(QMainWindow):
         self.status.showMessage(message)
 
     def show_about_dialog(self):
-        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion 0.7\n\nBy Eugene Yu with AI")
+        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion 0.7\n\nBy OllehEugene with AI")
 
     def apply_theme(self, theme_name):
-        theme_path = get_resources(theme_name)
-        if os.path.exists(theme_path):
-            with open(theme_path, "r") as f:
-                style = f.read()
-                QApplication.setStyleSheet(style)
+        if theme_name == "default":
+            QApplication.instance().setStyleSheet("")
+        else:
+            theme_path = get_resources(theme_name)
+            if os.path.exists(theme_path):
+                with open(theme_path, "r") as f:
+                    style = f.read()
+                    QApplication.instance().setStyleSheet(style)
 
     def on_port_changed(self, port):
         self.selected_port = port
-        # 연결되어 있으면 끊었다가 새 포트로 다시 연결
         if self.serial and self.serial.is_open:
             self.serial.close()
             self.connect_btn.setChecked(False)
             self.connect_btn.setText("Connect")
-            # 바로 다시 연결
             self.toggle_serial_connection()
 
     def on_baudrate_changed(self, baudrate):
@@ -272,7 +272,7 @@ class SerialTerminal(QMainWindow):
                 self.update_status_bar(f"Connected to {self.selected_port} at {self.baudrate} baud")
                 self.connect_btn.setChecked(True)
                 self.connect_btn.setText("Disconnect")
-                self.save_recent_port(self.selected_port)  # 최근 포트 저장
+                self.save_recent_port(self.selected_port)
             except serial.SerialException as e:
                 QMessageBox.critical(self, "Connection Error", str(e))
 
@@ -283,7 +283,6 @@ class SerialTerminal(QMainWindow):
         self.serial_port_combo.addItems(ports)
 
         if auto_connect:
-            # 최근 포트 리스트의 index 순서대로 실제 연결 가능한 포트에 자동 연결
             for entry in self.recent_ports:
                 port_candidate = entry["settings"].get("port", "").strip()
                 if port_candidate and port_candidate in ports:
@@ -292,7 +291,6 @@ class SerialTerminal(QMainWindow):
                     self.toggle_serial_connection()
                     break
             else:
-                # 모두 없으면 첫 번째 포트로
                 if ports:
                     self.serial_port_combo.setCurrentIndex(0)
                     self.selected_port = ports[0]
@@ -310,8 +308,10 @@ class SerialTerminal(QMainWindow):
     def toggle_left_panel(self):
         if self.left_panel_visible:
             self.splitter.setSizes([0, 24, 850])
+            self.toggle_btn.setIcon(QIcon(get_resources("right-3arrow.png")))
         else:
             self.splitter.setSizes([250, 24, 850])
+            self.toggle_btn.setIcon(QIcon(get_resources("left-3arrow.png")))
         self.left_panel_visible = not self.left_panel_visible
 
     def send_lineedit_command(self, index):
@@ -322,7 +322,6 @@ class SerialTerminal(QMainWindow):
 
     def save_checkbox_lineedit_to_json(self, filename):
         data = []
-        # 기존 time/disabled 값 보존을 위해 json을 먼저 읽음
         old_map = {}
         try:
             with open(filename, "r", encoding="utf-8") as f:
@@ -371,16 +370,13 @@ class SerialTerminal(QMainWindow):
                             self.checkboxes[idx].setDisabled(disabled)
                             self.lineedits[idx].setDisabled(disabled)
                             self.sendline_btns[idx].setDisabled(disabled)
-                            # disabled면 체크박스/버튼만 숨김, lineedit는 항상 보임
                             self.checkboxes[idx].setVisible(not disabled)
                             self.sendline_btns[idx].setVisible(not disabled)
                             self.lineedits[idx].setVisible(True)
-                            # 정렬 동적 적용
                             if disabled:
                                 self.lineedits[idx].setAlignment(Qt.AlignCenter)
                             else:
                                 self.lineedits[idx].setAlignment(Qt.AlignLeft)
-                # 딕셔너리 구조 (이전/임시)
                 elif isinstance(data, dict):
                     for i in range(10):
                         checkbox = self.checkboxes[i]

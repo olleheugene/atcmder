@@ -55,9 +55,9 @@ app = BUNDLE(
         upx=True,
         upx_exclude=[],
         runtime_tmpdir=None,
-        console=False,  # 콘솔창 숨김
-        windowed=True,  # .app 번들 생성
-        icon='app_icon.icns',  # .icns 아이콘 파일 사용 권장
+        console=False,
+        windowed=True,
+        icon='app_icon.icns',
         disable_windowed_traceback=False,
         argv_emulation=False,
         target_arch=None,
@@ -65,6 +65,6 @@ app = BUNDLE(
         entitlements_file=None,
     ),
     name='atcmder.app',
-    icon='./resources/app_icon.icns',  # .icns 아이콘 파일 사용 권장
+    icon='./resources/app_icon.icns',
     bundle_identifier=None
 )

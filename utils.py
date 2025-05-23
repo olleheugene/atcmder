@@ -3,14 +3,13 @@ import os
 import json
 import re
 import serial.tools.list_ports
-import config # config.py에서 상수 임포트
+import config
 
 def get_resources(resource_file):
     if hasattr(sys, '_MEIPASS'):
         path = os.path.join(sys._MEIPASS, config.RESOURCES_DIR, resource_file)
     else:
         path = os.path.join(config.RESOURCES_DIR, resource_file)
-    # print(f"Resource path: {path}") # 디버깅 시 주석 해제
     return path
 
 def list_serial_ports():
@@ -35,15 +34,15 @@ def load_comport_settings():
             print(f"Default settings file created: {settings_path}")
         except Exception as e:
             print(f"Error creating default settings file: {e}")
-            return default_settings # 파일 생성 실패 시 기본값 반환
+            return default_settings
     try:
         with open(settings_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
         print(f"Error loading comport settings from {settings_path}: {e}")
-        return default_settings # 파일 로드 실패 시 기본값 반환
+        return default_settings
 
-def save_comport_settings(settings_data): # 인자 이름 변경
+def save_comport_settings(settings_data):
     settings_path = get_resources(config.SETTINGS_FILE_NAME)
     try:
         with open(settings_path, 'w', encoding='utf-8') as f:
@@ -55,11 +54,8 @@ def save_comport_settings(settings_data): # 인자 이름 변경
 def load_checkbox_lineedit_config(config_file_name=config.CONFIG_FILE):
     json_path = get_resources(config_file_name)
     default_data = []
-    # 기본 데이터 생성 로직 (checkboxes 개수에 따라 동적으로 생성해야 함, 여기서는 예시로 10개 가정)
-    # 실제로는 SerialTerminal 클래스에서 UI 요소 개수를 받아와야 할 수 있음
-    # 또는 SerialTerminal 클래스 내부에 이 로직의 일부를 두는 것이 나을 수 있음
-    # 여기서는 단순화를 위해 이 함수 내에 둠
-    for i in range(10): # 예시로 10개
+
+    for i in range(10):
         default_data.append({
             "index": i,
             "checked": False,
@@ -82,7 +78,7 @@ def load_checkbox_lineedit_config(config_file_name=config.CONFIG_FILE):
     except json.JSONDecodeError:
         print(f"JSON decode error in {json_path}. Creating default config.")
         os.remove(json_path)
-        return load_checkbox_lineedit_config(config_file_name) # 재귀 호출로 기본값 생성
+        return load_checkbox_lineedit_config(config_file_name)
     except Exception as e:
         print(f"Error loading checkbox/lineedit config from {json_path}: {e}")
         return default_data
@@ -137,9 +133,6 @@ def expand_ansi_tabs(text, tabsize=4):
     return ''.join(result)
 
 def expand_ansi_cursor_right(text):
-    """
-    \x1b[{n}C 시퀀스를 n개의 공백으로 변환
-    """
     def repl(match):
         n = int(match.group(1))
         return ' ' * n
