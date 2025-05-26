@@ -268,7 +268,7 @@ class SerialTerminal(QMainWindow):
         else:
             try:
                 self.serial = serial.Serial(self.selected_port, self.baudrate, timeout=1)
-                self.update_status_bar(f"Connected to {self.selected_port} at {self.baudrate} baud")
+                self.update_status_bar(f"Connected to {self.selected_port} at {self.baudrate} bps")
                 self.connect_btn.setChecked(True)
                 self.connect_btn.setText("Disconnect")
                 self.save_recent_port(self.selected_port)
