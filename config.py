@@ -6,15 +6,7 @@ import logging
 APP_VERSION = "v0.7"
 COMMAND_LIST_FILE = "atcmder_cmdlist.json"
 RECENT_PORTS_FILE = "atcmder_recent_ports.json"
-
-# Logging setup (optional, can be expanded)
-log_dir = os.path.expanduser("~/.atcmder/logs")
-os.makedirs(log_dir, exist_ok=True)
-logging.basicConfig(
-    filename=os.path.join(log_dir, "atcmder.log"),
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s'
-)
+LOG_FILE = "atcmder.log"
 
 def get_resources(resource_file):
     if hasattr(sys, '_MEIPASS'):
@@ -42,6 +34,15 @@ def safe_copy(src, dst):
             shutil.copy(src, dst)
         except Exception as e:
             logging.warning(f"Copy failed: {src} -> {dst}: {e}")
+
+# Logging setup (optional, can be expanded)
+log_dir = os.path.expanduser(get_user_config_path(LOG_FILE))
+os.makedirs(log_dir, exist_ok=True)
+logging.basicConfig(
+    filename=os.path.join(log_dir, LOG_FILE),
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s'
+)
 
 # Ensure user config files exist
 if not os.path.exists(USER_COMMAND_LIST):
