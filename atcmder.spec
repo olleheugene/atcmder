@@ -1,7 +1,4 @@
 # -*- mode: python ; coding: utf-8 -*-
-import os
-import sys
-from PyInstaller.utils.hooks import collect_all
 
 def collect_resources():
     data_files = []
@@ -21,10 +18,7 @@ def get_resources(resource_file):
     return path
 
 binaries = []
-hiddenimports = []
-tmp_ret = collect_all('serial')
-binaries += tmp_ret[1]
-hiddenimports += tmp_ret[2]
+hiddenimports = ['serial_terminal']
 
 a = Analysis(
     ['atcmder.py'],
@@ -37,7 +31,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
+    optimize=2,
 )
 pyz = PYZ(a.pure)
 
@@ -49,7 +43,7 @@ app = BUNDLE(
         a.datas,
         [],
         name='atcmder',
-        debug=True,
+        debug=False,
         bootloader_ignore_signals=False,
         strip=False,
         upx=True,
