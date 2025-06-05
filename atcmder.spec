@@ -1,4 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
+from PyInstaller.utils.hooks import collect_all
 
 def collect_resources():
     data_files = []
@@ -18,7 +21,10 @@ def get_resources(resource_file):
     return path
 
 binaries = []
-hiddenimports = ['serial_terminal']
+hiddenimports = []
+tmp_ret = collect_all('serial')
+binaries += tmp_ret[1]
+hiddenimports += tmp_ret[2]
 
 a = Analysis(
     ['atcmder.py'],
