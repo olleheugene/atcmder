@@ -22,3 +22,4 @@ dist/atcmder.app/Contents/_CodeSignature/CodeResources
 dist/atcmder.app/Contents/MacOS/atcmder
 .DS_Store
 dist/atcmder.app/Contents/Resources/app_icon.icns
+resources/.atcmder_settings.cfg.swp
