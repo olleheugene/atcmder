@@ -3,7 +3,7 @@
         "index": 0,
         "checked": true,
         "title": {
-            "text": "Updated AT Command",
+            "text": "2.4GHz RF TEST Command List",
             "disabled": true
         },
         "time": 5.0
@@ -12,7 +12,7 @@
         "index": 1,
         "checked": true,
         "title": {
-            "text": "AT+CREG",
+            "text": "ATZ",
             "disabled": false
         },
         "time": 2.0
@@ -21,7 +21,7 @@
         "index": 2,
         "checked": true,
         "title": {
-            "text": "AT",
+            "text": "ATM",
             "disabled": false
         },
         "time": 0.5
@@ -30,7 +30,7 @@
         "index": 3,
         "checked": true,
         "title": {
-            "text": "",
+            "text": "AAA",
             "disabled": false
         },
         "time": 0.5

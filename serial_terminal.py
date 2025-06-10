@@ -7,14 +7,13 @@ import json
 import re
 import pyte
 from PySide6.QtWidgets import (
-    QMainWindow, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication
+    QMainWindow, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog
 )
 from PySide6.QtGui import QIcon, QFont, QTextCursor, QAction
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer
 from ansi2html import Ansi2HTMLConverter
-from utils import get_resources, expand_ansi_tabs, expand_ansi_cursor_right, process_ansi_spacing,USER_COMMAND_LIST, USER_PORT_LIST
+from utils import get_resources, expand_ansi_tabs, expand_ansi_cursor_right, process_ansi_spacing,USER_COMMAND_LIST, USER_PORT_LIST, USER_PORT_LIST, USER_SETTINGS, APP_VERSION
 
-# Helper for serial port listing
 import serial.tools.list_ports
 def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
@@ -25,15 +24,20 @@ class SerialTerminal(QMainWindow):
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
-        self.setWindowTitle("AT Commander v0.7")
+        self.setWindowTitle("AT Commander v" + APP_VERSION)
         self.resize(1100, 600)
         program_icon_path = get_resources("app_icon.png")
+        self.first_load = True
         self.data_buffer = ""
         self.buffer_timeout = None
         self.ansi_buffer = ""  # Buffer for incomplete ANSI sequences
         self.command_history = []
         self.history_index = -1
         self.current_input_buffer = ""
+        self.current_json_file = None  # Track currently loaded JSON file path
+        self.font_size = self.load_font_settings()  # Load saved font size or use default
+        self.auto_scroll_enabled = True  # Track if auto-scroll is enabled
+        self.scroll_monitoring_active = True  # Track if scroll monitoring should be active
         if os.path.exists(program_icon_path):
             self.setWindowIcon(QIcon(program_icon_path))
         self.comport_settings = []
@@ -47,6 +51,10 @@ class SerialTerminal(QMainWindow):
         self.status.addPermanentWidget(self.author_label)
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
+        load_commands_action = QAction("Load CMD list", self)
+        load_commands_action.triggered.connect(self.load_command_list_from_file)
+        file_menu.addAction(load_commands_action)
+        file_menu.addSeparator()
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
@@ -54,6 +62,34 @@ class SerialTerminal(QMainWindow):
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
+        
+        # View menu for font size adjustments
+        view_menu = menubar.addMenu("View")
+        
+        increase_font_action = QAction("Increase Font Size", self)
+        increase_font_action.setShortcut("Ctrl++")
+        increase_font_action.triggered.connect(self.increase_font_size)
+        view_menu.addAction(increase_font_action)
+        
+        decrease_font_action = QAction("Decrease Font Size", self)
+        decrease_font_action.setShortcut("Ctrl+-")
+        decrease_font_action.triggered.connect(self.decrease_font_size)
+        view_menu.addAction(decrease_font_action)
+        
+        reset_font_action = QAction("Reset Font Size", self)
+        reset_font_action.setShortcut("Ctrl+0")
+        reset_font_action.triggered.connect(self.reset_font_size)
+        view_menu.addAction(reset_font_action)
+        
+        view_menu.addSeparator()
+        
+        # Add current font size display
+        self.font_size_action = QAction(f"Current Font Size: {self.font_size}", self)
+        self.font_size_action.setEnabled(False)  # Make it non-clickable, just for display
+        view_menu.addAction(self.font_size_action)
+        
+        view_menu.addSeparator()
+        
         theme_menu = menubar.addMenu("Theme")
         light_action = QAction("Light", self)
         dark_action = QAction("Dark", self)
@@ -83,6 +119,9 @@ class SerialTerminal(QMainWindow):
         baudrates = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000"]
         self.baudrate_combo.addItems(baudrates)
         self.baudrate_combo.setCurrentText(str(self.baudrate))
+        self.baudrate_combo.setEditable(True)
+        from PySide6.QtGui import QIntValidator
+        self.baudrate_combo.lineEdit().setValidator(QIntValidator(1, 10000000, self))
         self.baudrate_combo.currentTextChanged.connect(self.on_baudrate_changed)
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setCheckable(True)
@@ -104,7 +143,7 @@ class SerialTerminal(QMainWindow):
             row_layout = QHBoxLayout()
             checkbox = QCheckBox()
             lineedit = QLineEdit()
-            lineedit.setAlignment(Qt.AlignCenter) 
+            # lineedit.setAlignment(Qt.AlignCenter) 
             send_btn = QPushButton("Send")
             
             # Create a proper closure for the button click
@@ -112,8 +151,8 @@ class SerialTerminal(QMainWindow):
                 return lambda: self.send_lineedit_command(index)
             
             send_btn.clicked.connect(make_send_handler(i))
-            checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit_to_json(USER_COMMAND_LIST))
-            lineedit.textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit_to_json(USER_COMMAND_LIST))
+            checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit_to_json())
+            lineedit.textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit_to_json())
             row_layout.addWidget(checkbox)
             row_layout.addWidget(lineedit)
             row_layout.addWidget(send_btn)
@@ -128,9 +167,13 @@ class SerialTerminal(QMainWindow):
         self.textedit = QTextEdit()
         self.textedit.setReadOnly(False)
         self.textedit.installEventFilter(self)
-        fixed_font = QFont("Courier New")
-        fixed_font.setStyleHint(QFont.Monospace)
-        self.textedit.setFont(fixed_font)
+        
+        # Setup scroll monitoring for smart auto-scroll
+        # QTimer.singleShot(100, self.setup_scroll_monitoring)  # Delay to ensure scrollbar is available
+        
+        # Setup terminal font
+        self.setup_terminal_font()
+        
         self.textedit.document().setMaximumBlockCount(0)
         self.clear_btn = QPushButton()
         self.clear_btn.setIcon(QIcon(get_resources("clear.png")))
@@ -179,12 +222,20 @@ class SerialTerminal(QMainWindow):
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
         self.ansi_conv = Ansi2HTMLConverter(inline=True, scheme='xterm')
+        # Set default JSON file as current
+        self.current_json_file = USER_COMMAND_LIST
         self.load_checkbox_lineedit_from_json(USER_COMMAND_LIST)
         self.sequential_btn = QPushButton("Sequential Send")
         self.sequential_btn.clicked.connect(self.sequential_send_commands)
         self.left_layout.addWidget(self.sequential_btn)
         self.refresh_serial_ports(auto_connect=True)
         self.textedit.setFocus()
+        
+        # Try to auto-load last used JSON file
+        self.auto_load_last_json_file()
+        
+        # Show current JSON file status
+        self.update_json_file_status()
         self.last_ports = set(list_serial_ports())
         self.port_monitor_timer = QTimer(self)
         self.port_monitor_timer.timeout.connect(self.check_ports_changed)
@@ -192,23 +243,50 @@ class SerialTerminal(QMainWindow):
 
     def eventFilter(self, obj, event):
         if obj is self.textedit:
-            # Handle mouse click events - always move cursor to end
-            if event.type() == QEvent.MouseButtonPress:
-                # Move cursor to end on any mouse click
-                self.textedit.moveCursor(QTextCursor.End)
+            # Handle mouse wheel events for scroll detection
+            if event.type() == QEvent.Type.Wheel:
+                # Allow QTextEdit to handle the actual scrolling.
+                # The scrollbar.valueChanged signal will trigger on_scroll_position_changed 
+                # which handles our check_scroll_position logic via a debounce timer.
+                return False
+                
+            # Handle mouse click events - move cursor to end only if auto-scroll is enabled
+            elif event.type() == QEvent.Type.MouseButtonPress:
+                # Only move cursor to end on mouse click if auto-scroll is enabled
+                if self.auto_scroll_enabled:
+                    self.textedit.moveCursor(QTextCursor.End)
                 return False  # Allow normal mouse event processing
             
             # Handle key press events
             elif event.type() == QEvent.KeyPress:
                 key = event.key()
                 text = event.text()
+                modifiers = event.modifiers()
                 
-                # Always move cursor to end for any key input
-                self.textedit.moveCursor(QTextCursor.End)
+                # Handle scroll-related keys (Page Up, Page Down)
+                if key in [Qt.Key_PageUp, Qt.Key_PageDown]:
+                    # Allow QTextEdit to handle the actual scrolling.
+                    # The scrollbar.valueChanged signal will trigger on_scroll_position_changed.
+                    return False
 
+                # Handle font size adjustment shortcuts
+                if modifiers == Qt.ControlModifier:
+                    if key == Qt.Key_Plus or key == Qt.Key_Equal:  # Ctrl++ or Ctrl+=
+                        self.increase_font_size()
+                        return True
+                    elif key == Qt.Key_Minus:  # Ctrl+-
+                        self.decrease_font_size()
+                        return True
+                    elif key == Qt.Key_0:  # Ctrl+0
+                        self.reset_font_size()
+                        return True
+                
+                # Only move cursor to end for user input if connected to serial
                 if self.serial and self.serial.is_open:
+                    self.textedit.moveCursor(QTextCursor.End)
+
                     if key == Qt.Key_Return or key == Qt.Key_Enter:
-                        # Send \r\n when Enter key is pressed (can be changed to \r or \n as needed)
+                        # Send \r\n when Enter key is pressed
                         command_to_send = self.current_input_buffer + "\r\n" 
                         self.serial.write(command_to_send.encode('utf-8', errors='replace'))
                         
@@ -222,8 +300,6 @@ class SerialTerminal(QMainWindow):
                         
                         self.current_input_buffer = ""  # Clear input buffer
                         self.history_index = -1  # Reset history index
-                        # self.textedit.moveCursor(QTextCursor.End)  # Don't move cursor here, wait for echo
-                        # self.textedit.insertPlainText("\n")  # Use for local echo if needed, usually device echoes
                         return True  # Event handling complete
                     
                     elif key == Qt.Key_Up:
@@ -281,10 +357,6 @@ class SerialTerminal(QMainWindow):
                     elif key == Qt.Key_Tab:
                         # Tab key handling - send tab character (\t)
                         self.serial.write(b'\t')
-                        # self.current_input_buffer += '\t'
-                        # # Display tab as spaces in QTextEdit (8 spaces)
-                        # cursor = self.textedit.textCursor()
-                        # cursor.insertText('        ')  # Display as 8 spaces
                         return True  # Event handling complete
                     
                     # Send special keys like Ctrl+C (if needed)
@@ -294,7 +366,13 @@ class SerialTerminal(QMainWindow):
 
                     return False  # Default handling for other keys
                 else:  # When serial is not connected
-                    # ... (existing logic: newline on enter, etc.) ...
+                    # Allow normal scroll behavior when not connected to serial
+                    if key in [Qt.Key_Up, Qt.Key_Down]: # PageUp/PageDown already handled above
+                        # Check scroll position after navigation
+                        QTimer.singleShot(50, self.check_scroll_position)
+                        # Return False to allow QTextEdit to handle the actual scrolling
+                        return False
+                        
                     if key == Qt.Key_Return or key == Qt.Key_Enter:
                         self.current_input_buffer = ""  # Clear input buffer
                         return False  # Normal QTextEdit enter behavior
@@ -372,8 +450,240 @@ class SerialTerminal(QMainWindow):
     def update_status_bar(self, message):
         self.status.showMessage(message)
 
+    def update_json_file_status(self):
+        """Update status bar to show current JSON file being used"""
+        if self.current_json_file:
+            filename = os.path.basename(self.current_json_file)
+            if self.current_json_file == USER_COMMAND_LIST:
+                # self.update_status_bar(f"Using default command list: {filename}")
+                self.setWindowTitle("AT Commander v" + APP_VERSION)
+            else:
+                # self.update_status_bar(f"Using custom command list: {filename}")
+                self.setWindowTitle("AT Commander v" + APP_VERSION + f" - {filename}")
+        else:
+            self.update_status_bar("No command list loaded")
+            self.setWindowTitle("AT Commander v" + APP_VERSION)
+
     def show_about_dialog(self):
-        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion 0.7\n\nBy OllehEugene with AI")
+        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + APP_VERSION + "\n\nBy OllehEugene with AI")
+
+    def save_last_json_file(self, file_path):
+        """Save the last loaded JSON file path to settings"""
+        try:
+            # Load existing settings first
+            settings = []
+            if os.path.exists(USER_SETTINGS):
+                try:
+                    with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                        settings = json.load(f)
+                    if not isinstance(settings, list):
+                        settings = []
+                except Exception:
+                    settings = []
+            
+            # Find existing last_json_file object and update it
+            json_file_found = False
+            for item in settings:
+                if isinstance(item, dict) and "last_json_file" in item:
+                    item["last_json_file"] = file_path
+                    json_file_found = True
+                    break
+            
+            # If no last_json_file object found, add new one
+            if not json_file_found:
+                json_file_obj = {
+                    "last_json_file": file_path
+                }
+                settings.append(json_file_obj)
+            
+            # Save back to file
+            with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save last JSON file setting: {e}")
+
+    def load_last_json_file(self):
+        """Load the last used JSON file path from settings"""
+        try:
+            with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+                
+                # Find last_json_file in the list
+                for item in settings:
+                    if isinstance(item, dict) and "last_json_file" in item:
+                        return item["last_json_file"]
+                
+                return None
+        except Exception:
+            return None
+
+    def auto_load_last_json_file(self):
+        """Automatically load the last used JSON file on startup"""
+        last_file = self.load_last_json_file()
+        if last_file and os.path.exists(last_file) and last_file != USER_COMMAND_LIST:
+            try:
+                self.load_and_validate_json_file(last_file)
+                print(f"Auto-loaded last JSON file: {os.path.basename(last_file)}")
+            except Exception as e:
+                print(f"Could not auto-load last JSON file: {e}")
+                # Fall back to default
+                self.current_json_file = USER_COMMAND_LIST
+                self.update_json_file_status()
+
+    def load_command_list_from_file(self):
+        """Open file dialog to load command list from JSON file"""
+        file_dialog = QFileDialog(self)
+        file_dialog.setWindowTitle("Load Command List")
+        file_dialog.setNameFilter("JSON files (*.json)")
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        file_dialog.setAcceptMode(QFileDialog.AcceptOpen)
+        
+        # Set default directory to resources folder
+        default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
+        if os.path.exists(default_path):
+            file_dialog.setDirectory(default_path)
+        
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                json_file_path = selected_files[0]
+                self.load_and_validate_json_file(json_file_path)
+
+    def validate_json_structure(self, data):
+        """Validate JSON file structure for command list"""
+        if not isinstance(data, list):
+            return False, "JSON file must contain an array of command objects"
+        
+        required_keys = ["index", "checked", "title", "time"]
+        required_title_keys = ["text", "disabled"]
+        
+        for i, item in enumerate(data):
+            if not isinstance(item, dict):
+                return False, f"Item {i} is not an object"
+            
+            # Check required keys
+            for key in required_keys:
+                if key not in item:
+                    return False, f"Item {i} is missing required key: {key}"
+            
+            # Validate index
+            if not isinstance(item["index"], int) or item["index"] < 0:
+                return False, f"Item {i} has invalid index: must be a non-negative integer"
+            
+            # Validate checked
+            if not isinstance(item["checked"], bool):
+                return False, f"Item {i} has invalid checked value: must be boolean"
+            
+            # Validate title structure
+            if not isinstance(item["title"], dict):
+                return False, f"Item {i} has invalid title: must be an object"
+            
+            for title_key in required_title_keys:
+                if title_key not in item["title"]:
+                    return False, f"Item {i} title is missing required key: {title_key}"
+            
+            if not isinstance(item["title"]["text"], str):
+                return False, f"Item {i} title text must be a string"
+            
+            if not isinstance(item["title"]["disabled"], bool):
+                return False, f"Item {i} title disabled must be boolean"
+            
+            # Validate time
+            if not isinstance(item["time"], (int, float)) or item["time"] < 0:
+                return False, f"Item {i} has invalid time: must be a non-negative number"
+        
+        return True, "Valid JSON structure"
+
+    def load_and_validate_json_file(self, file_path):
+        """Load and validate JSON file, then apply to command list"""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            # Validate structure
+            is_valid, message = self.validate_json_structure(data)
+            
+            if not is_valid:
+                QMessageBox.critical(
+                    self, 
+                    "Invalid JSON File", 
+                    f"The selected JSON file has an invalid\n\nPlease select a valid command list JSON file."
+                )
+                return
+            
+            # Apply the data to UI
+            self.current_json_file = file_path  # Remember the current JSON file
+            self.apply_json_data_to_ui(data)
+            
+            # Show success message
+            if self.first_load != True:
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"Command list loaded successfully"
+                )
+            else:
+                self.first_load = False
+            
+            # Update status to show current JSON file
+            self.update_json_file_status()
+            
+            # Save as last loaded JSON file for next startup
+            self.save_last_json_file(file_path)
+            
+        except json.JSONDecodeError as e:
+            QMessageBox.critical(
+                self, 
+                "JSON Parse Error", 
+                f"The selected file is not a valid\n\nPlease select a valid JSON file."
+            )
+        except FileNotFoundError:
+            QMessageBox.critical(
+                self, 
+                "File Not Found", 
+                "The selected file could not be found."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Error", 
+                f"An error occurred while loading the file:\n\n{str(e)}"
+            )
+
+    def apply_json_data_to_ui(self, data):
+        """Apply loaded JSON data to the UI elements"""
+        # Clear existing data first
+        for i in range(10):
+            self.checkboxes[i].setChecked(False)
+            self.lineedits[i].setText("")
+        
+        # Apply new data
+        for item in data:
+            index = item["index"]
+            if 0 <= index < 10:  # Only apply to valid indices
+                self.checkboxes[index].setChecked(item["checked"])
+                self.lineedits[index].setText(item["title"]["text"])
+                # Note: we don't apply the disabled state to UI, only store it
+                disabled = item.get("title", {}).get("disabled", False)
+                self.checkboxes[index].setDisabled(disabled)
+                self.lineedits[index].setDisabled(disabled)
+                self.sendline_btns[index].setDisabled(disabled)
+                # If disabled, hide checkbox/button only, lineedit always visible
+                self.checkboxes[index].setVisible(not disabled)
+                self.sendline_btns[index].setVisible(not disabled)
+                if disabled:
+                    self.lineedits[index].setAlignment(Qt.AlignCenter)
+                else:
+                    self.lineedits[index].setAlignment(Qt.AlignLeft)
+
+        
+        # Save the loaded data to the currently selected JSON file (if any) or default file
+        target_file = self.current_json_file if self.current_json_file else USER_COMMAND_LIST
+        try:
+            with open(target_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            self.update_status_bar(f"Warning: Could not save to {os.path.basename(target_file)}: {str(e)}")
 
     def apply_theme(self, theme_name):
         if theme_name == "default":
@@ -493,7 +803,12 @@ class SerialTerminal(QMainWindow):
         elif not command:
             self.update_status_bar("Error: No command to send")
 
-    def save_checkbox_lineedit_to_json(self, filename):
+    def save_checkbox_lineedit_to_json(self, filename=None):
+        """Save checkbox/lineedit data to JSON file.
+        If filename is None, saves to currently selected JSON file or default file."""
+        if filename is None:
+            filename = self.current_json_file if self.current_json_file else USER_COMMAND_LIST
+            
         data = []
         # Read JSON first to preserve existing time/disabled values
         old_map = {}
@@ -584,38 +899,42 @@ class SerialTerminal(QMainWindow):
             pass
 
     def update_terminal(self, data):
-        """Output serial data to terminal (including ANSI processing)"""
-        # Use ANSI processing functions from utils.py (process_ansi_spacing includes all space handling)
-        data = process_ansi_spacing(data)
-        
-        cursor = self.textedit.textCursor()
-        is_at_end = cursor.atEnd()
-        
-        # Move cursor to end
-        self.textedit.moveCursor(QTextCursor.End)
-        
+        scrollbar = self.textedit.verticalScrollBar()
+        was_at_bottom = False
+        if scrollbar:
+            max_value = scrollbar.maximum()
+            current_value = scrollbar.value()
+            tolerance = max(15, self.font_size)
+            was_at_bottom = (max_value - current_value) <= tolerance
+
+        # 현재 스크롤 위치 저장 (auto-scroll off일 때 복원용)
+        saved_scroll_value = scrollbar.value() if scrollbar else None
+
+        # 커서는 항상 마지막으로 이동
+        end_cursor = self.textedit.textCursor()
+        end_cursor.movePosition(QTextCursor.End)
+        self.textedit.setTextCursor(end_cursor)
+
+        # 데이터 추가
         try:
-            # ANSI to HTML conversion to maintain colors
             html_output = self.ansi_conv.convert(data, full=False)
             if html_output.strip():
-                # Handle line breaks properly in HTML
-                # Manual processing in case ansi2html doesn't convert line breaks to <br>
                 html_output = html_output.replace('\n', '<br>')
-                # Convert consecutive spaces to &nbsp; to prevent HTML from collapsing spaces
                 import re
                 html_output = re.sub(r'  +', lambda m: '&nbsp;' * len(m.group()), html_output)
                 self.textedit.insertHtml(html_output)
         except Exception:
-            # Fallback to plain text on ANSI conversion failure
             if data.strip():
                 self.textedit.insertPlainText(data)
-        
-        # Auto-scroll if user was viewing the end
-        if is_at_end:
+
+        # 스크롤 동작 제어
+        if self.auto_scroll_enabled and was_at_bottom:
+            self.textedit.moveCursor(QTextCursor.End)
             self.textedit.ensureCursorVisible()
-        
-        # Always ensure cursor is at the end for user input
-        self.textedit.moveCursor(QTextCursor.End)
+        else:
+            # auto-scroll이 꺼진 경우: 화면(뷰포트) 위치를 복원
+            if scrollbar and saved_scroll_value is not None:
+                scrollbar.setValue(saved_scroll_value)
 
     def read_serial_data(self):
         """Thread function to read serial data"""
@@ -818,3 +1137,126 @@ class SerialTerminal(QMainWindow):
                 i += 1
         
         return True, -1
+
+    def load_font_settings(self):
+        """Load font settings from file or return default"""
+        try:
+            with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+                
+                # Find font object in the list
+                font_size = 14  # Default
+                for item in settings:
+                    if isinstance(item, dict) and "font" in item:
+                        font_info = item["font"]
+                        font_size = font_info.get("size", 14)
+                        break
+                
+                # Validate font size range
+                if 6 <= font_size <= 32:
+                    return font_size
+                else:
+                    return 14
+        except Exception:
+            return 14  # Default font size
+
+    def save_font_settings(self):
+        """Save current font settings to file"""
+        try:
+            # Load existing settings first
+            settings = []
+            if os.path.exists(USER_SETTINGS):
+                try:
+                    with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                        settings = json.load(f)
+                    if not isinstance(settings, list):
+                        settings = []
+                except Exception:
+                    settings = []
+            
+            # Find existing font object and update it
+            font_found = False
+            for item in settings:
+                if isinstance(item, dict) and "font" in item:
+                    # Update only the size, keep other font properties
+                    item["font"]["size"] = self.font_size
+                    font_found = True
+                    break
+            
+            # If no font object found, add new one
+            if not font_found:
+                font_obj = {
+                    "font": {
+                        "name": "Monaco",
+                        "size": self.font_size,
+                        "bold": True
+                    }
+                }
+                settings.append(font_obj)
+            
+            # Save back to file
+            with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save font settings: {e}")
+
+    def setup_terminal_font(self):
+        """Setup terminal font with current font size"""
+        fixed_font = QFont("Courier New")
+        fixed_font.setStyleHint(QFont.Monospace)
+        fixed_font.setPointSize(self.font_size)
+        self.textedit.setFont(fixed_font)
+        
+        # Move cursor to the end of the terminal content
+        cursor = self.textedit.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self.textedit.setTextCursor(cursor)
+        self.textedit.ensureCursorVisible()
+        
+        # Update the menu text to show current font size
+        if hasattr(self, 'font_size_action'):
+            self.font_size_action.setText(f"Current Font Size: {self.font_size}")
+    
+    def increase_font_size(self):
+        """Increase terminal font size"""
+        if self.font_size < 32:  # Maximum font size limit
+            self.font_size += 1
+            self.setup_terminal_font()
+            self.save_font_settings()
+            self.update_status_bar(f"Font size: {self.font_size}")
+    
+    def decrease_font_size(self):
+        """Decrease terminal font size"""
+        if self.font_size > 6:  # Minimum font size limit
+            self.font_size -= 1
+            self.setup_terminal_font()
+            self.save_font_settings()
+            self.update_status_bar(f"Font size: {self.font_size}")
+    
+    def reset_font_size(self):
+        """Reset terminal font size to default"""
+        self.font_size = 14  # Default font size
+        self.setup_terminal_font()
+        self.save_font_settings()
+        self.update_status_bar(f"Font size reset to: {self.font_size}")
+    
+    def check_scroll_position(self):
+        """Manually check scroll position for scroll lock functionality"""
+        scrollbar = self.textedit.verticalScrollBar()
+        if not scrollbar:
+            return
+            
+        value = scrollbar.value()
+        max_value = scrollbar.maximum()
+        tolerance = max(20, self.font_size)
+        
+        # If user is at the bottom (within tolerance), enable auto-scroll
+        # If user scrolled up, disable auto-scroll
+        if max_value - value <= tolerance:  # At bottom with dynamic tolerance
+            if not self.auto_scroll_enabled:
+                self.auto_scroll_enabled = True
+                self.update_status_bar("Auto-scroll re-enabled")
+        else:  # User scrolled up
+            if self.auto_scroll_enabled:
+                self.auto_scroll_enabled = False
+                self.update_status_bar("Auto-scroll disabled (scroll to bottom to re-enable)")
