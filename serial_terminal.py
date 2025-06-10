@@ -37,7 +37,6 @@ class SerialTerminal(QMainWindow):
         self.current_json_file = None  # Track currently loaded JSON file path
         self.font_size = self.load_font_settings()  # Load saved font size or use default
         self.auto_scroll_enabled = True  # Track if auto-scroll is enabled
-        self.scroll_monitoring_active = True  # Track if scroll monitoring should be active
         if os.path.exists(program_icon_path):
             self.setWindowIcon(QIcon(program_icon_path))
         self.comport_settings = []
