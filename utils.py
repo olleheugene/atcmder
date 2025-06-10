@@ -16,9 +16,10 @@ LIGHT_CSS_NAME        = "light.css"
 DARK_CSS_NAME         = "dark.css"
 RESOURCES_DIR         = "resources"
 
-APP_VERSION           = "v0.7"
+APP_VERSION           = "0.9"
 COMMAND_LIST_FILE     = "atcmder_cmdlist.json"
-RECENT_PORTS_FILE     = "atcmder_recent_ports.json"
+PORTS_FILE            = "atcmder_ports.cfg"
+SETTINGS_FILE         = "atcmder_settings.cfg"
 
 def get_user_config_path(filename):
     if sys.platform.startswith("win"):
@@ -31,7 +32,8 @@ def get_user_config_path(filename):
     return os.path.join(config_dir, filename)
 
 USER_COMMAND_LIST = get_user_config_path(COMMAND_LIST_FILE)
-USER_PORT_LIST = get_user_config_path(RECENT_PORTS_FILE)
+USER_PORT_LIST    = get_user_config_path(PORTS_FILE)
+USER_SETTINGS     = get_user_config_path(SETTINGS_FILE)
 
 
 def get_resources(resource_file):
