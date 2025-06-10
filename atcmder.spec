@@ -21,16 +21,16 @@ def get_resources(resource_file):
     return path
 
 binaries = []
-hiddenimports = []
+hiddenimports = ['serial_terminal', 'utils', 'ansi2html', 'pyte']
 tmp_ret = collect_all('serial')
 binaries += tmp_ret[1]
 hiddenimports += tmp_ret[2]
 
 a = Analysis(
     ['atcmder.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=binaries,
-    datas=collect_resources(),
+    datas=collect_resources() + [('serial_terminal.py', '.'), ('utils.py', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
