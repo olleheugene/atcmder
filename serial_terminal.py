@@ -194,11 +194,13 @@ class SerialTerminal(QMainWindow):
         self.clear_btn.clicked.connect(self.clear_terminal)
         textedit_layout = QVBoxLayout()
         textedit_layout.setContentsMargins(0, 0, 8, 12)
-        btn_layout = QHBoxLayout()
-        btn_layout.setContentsMargins(0, 0, 8, 4)
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.clear_btn)
-        textedit_layout.addLayout(btn_layout)
+        btn_h_layout = QHBoxLayout()
+        btn_h_layout.addStretch()
+        btn_h_layout.addWidget(self.clear_btn)
+        btn_v_layout = QVBoxLayout()
+        btn_v_layout.addSpacing(10)
+        btn_v_layout.addLayout(btn_h_layout)
+        textedit_layout.addLayout(btn_v_layout)
         textedit_layout.addWidget(self.textedit)
         right_widget = QWidget()
         right_widget.setLayout(textedit_layout)
@@ -249,9 +251,6 @@ class SerialTerminal(QMainWindow):
         # Show current JSON file status
         self.update_json_file_status()
         self.last_ports = set(list_serial_ports())
-        # self.port_monitor_timer = QTimer(self) 
-        # self.port_monitor_timer.timeout.connect(self.check_ports_changed)
-        # self.port_monitor_timer.start(1000)  # Check for port changes every 1 second
 
     def eventFilter(self, obj, event):
         if obj is self.textedit:
@@ -342,14 +341,12 @@ class SerialTerminal(QMainWindow):
                             cursor.select(QTextCursor.LineUnderCursor)
                             line_text = cursor.selectedText()
 
-                            # 프롬프트 추출 (예: 'uart:~$ ', 'user@host:~$ ', '> ', '$ ', '# ' 등)
                             prompt_match = re.match(r'^(.+\$\s|.+#\s|.+>\s|[>\$\#]\s)', line_text)
                             if prompt_match:
                                 prompt = prompt_match.group(1)
                             else:
                                 prompt = ''
 
-                            # 프롬프트 뒤만 교체
                             cursor.movePosition(QTextCursor.StartOfLine)
                             cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len(prompt))
                             cursor.movePosition(QTextCursor.EndOfLine, QTextCursor.KeepAnchor)
@@ -372,14 +369,12 @@ class SerialTerminal(QMainWindow):
                             cursor.select(QTextCursor.LineUnderCursor)
                             line_text = cursor.selectedText()
 
-                            # 프롬프트 추출 (예: 'uart:~$ ', 'user@host:~$ ', '> ', '$ ', '# ' 등)
                             prompt_match = re.match(r'^(.+\$\s|.+#\s|.+>\s|[>\$\#]\s)', line_text)
                             if prompt_match:
                                 prompt = prompt_match.group(1)
                             else:
                                 prompt = ''
 
-                            # 프롬프트 뒤만 교체
                             cursor.movePosition(QTextCursor.StartOfLine)
                             cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len(prompt))
                             cursor.movePosition(QTextCursor.EndOfLine, QTextCursor.KeepAnchor)
@@ -395,14 +390,12 @@ class SerialTerminal(QMainWindow):
                             cursor.select(QTextCursor.LineUnderCursor)
                             line_text = cursor.selectedText()
 
-                            # 프롬프트 추출 (예: 'uart:~$ ', 'user@host:~$ ', '> ', '$ ', '# ' 등)
                             prompt_match = re.match(r'^(.+\$\s|.+#\s|.+>\s|[>\$\#]\s)', line_text)
                             if prompt_match:
                                 prompt = prompt_match.group(1)
                             else:
                                 prompt = ''
 
-                            # 프롬프트 뒤만 교체
                             cursor.movePosition(QTextCursor.StartOfLine)
                             cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len(prompt))
                             cursor.movePosition(QTextCursor.EndOfLine, QTextCursor.KeepAnchor)
@@ -789,7 +782,7 @@ class SerialTerminal(QMainWindow):
                 self.running = True
                 self.thread = threading.Thread(target=self.read_serial_data, daemon=True)
                 self.thread.start()
-                self.update_status_bar(f"Connected to {self.selected_port} at {self.baudrate} bps")
+                self.update_status_bar(f"Connected to {self.selected_port} @ {self.baudrate} bps")
                 self.connect_btn.setChecked(True)
                 self.connect_btn.setText("Disconnect")
                 self.save_recent_port(self.selected_port)  # Save recent port
@@ -1172,15 +1165,6 @@ class SerialTerminal(QMainWindow):
         self.sequential_btn.setText("Sequential Send")
         self.update_status_bar(message)
 
-    def check_ports_changed(self):
-        current_ports = set(list_serial_ports())
-        if current_ports != self.last_ports:
-            self.refresh_serial_ports()
-            self.last_ports = current_ports
-            # 자동 재연결 시도
-            # QTimer.singleShot(1000, self.try_reconnect_serial)
-
-
     def load_history_settings(self):
         """Load history settings from file or return default"""
         try:
@@ -1334,7 +1318,7 @@ class SerialTerminal(QMainWindow):
             self.font_size += 1
             self.setup_terminal_font()
             self.save_font_settings()
-            self.update_status_bar(f"Font size: {self.font_size}")
+            # self.update_status_bar(f"Font size: {self.font_size}")
     
     def decrease_font_size(self):
         """Decrease terminal font size"""
@@ -1342,7 +1326,7 @@ class SerialTerminal(QMainWindow):
             self.font_size -= 1
             self.setup_terminal_font()
             self.save_font_settings()
-            self.update_status_bar(f"Font size: {self.font_size}")
+            # self.update_status_bar(f"Font size: {self.font_size}")
     
     def reset_font_size(self):
         """Reset terminal font size to default"""
