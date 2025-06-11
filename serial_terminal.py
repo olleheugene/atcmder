@@ -512,16 +512,16 @@ class SerialTerminal(QMainWindow):
             self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
 
     def show_about_dialog(self):
-        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + APP_VERSION + "\n\nBy OllehEugene with AI")
+        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + utils.APP_VERSION + "\n\nBy OllehEugene with AI")
 
     def save_last_json_file(self, file_path):
         """Save the last loaded JSON file path to settings"""
         try:
             # Load existing settings first
             settings = []
-            if os.path.exists(USER_SETTINGS):
+            if os.path.exists(utils.USER_SETTINGS):
                 try:
-                    with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                         settings = json.load(f)
                     if not isinstance(settings, list):
                         settings = []
@@ -840,7 +840,7 @@ class SerialTerminal(QMainWindow):
                 # self.update_status_bar(f"Sent: {command}")
                 
                 # Display sent command in terminal for verification
-                self.serial_data_signal.emit(f"{command}")
+                self.serial_data_signal.emit(f"{command}\r\n")
                 
             except Exception as e:
                 # Handle encoding or serial errors
@@ -1070,7 +1070,7 @@ class SerialTerminal(QMainWindow):
             # Load time intervals from JSON file
             time_intervals = {}
             try:
-                with open(USER_COMMAND_LIST, "r", encoding="utf-8") as f:
+                with open(utils.USER_COMMAND_LIST, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, list):
                     for item in data:
@@ -1116,7 +1116,7 @@ class SerialTerminal(QMainWindow):
                                 QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval: update_status(cmd, num, total, interval))
                                 
                                 # Display sent command in terminal for verification
-                                self.serial_data_signal.emit(f"> {command}\n")
+                                self.serial_data_signal.emit(f"{command}\r\n")
                                 
                                 # Add to history
                                 if command not in self.command_history:
@@ -1201,7 +1201,7 @@ class SerialTerminal(QMainWindow):
     def load_font_settings(self):
         """Load font settings from file or return default"""
         try:
-            with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                 settings = json.load(f)
                 
                 # Find font object in the list
