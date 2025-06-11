@@ -16,7 +16,7 @@ LIGHT_CSS_NAME        = "light"
 DARK_CSS_NAME         = "dark"
 RESOURCES_DIR         = "resources"
 
-APP_VERSION           = "0.9.2"
+APP_VERSION           = "0.9.3"
 COMMAND_LIST_FILE     = "atcmder_cmdlist.json"
 PORTS_FILE            = "atcmder_ports.cfg"
 SETTINGS_FILE         = "atcmder_settings.cfg"
@@ -176,7 +176,7 @@ def expand_ansi_cursor_right(text):
         return ' ' * n
     return re.sub(r'\x1b\[(\d+)C', repl, text)
 
-def is_ansi_sequence_complete(self, data):
+def is_ansi_sequence_complete(data):
     """Check if all ANSI escape sequences in data are complete"""
     # Enhanced ANSI pattern that covers color codes, cursor movement, and other sequences
     # Final characters include: letters (a-zA-Z), digits in some cases, and special chars like @, ~, etc.
