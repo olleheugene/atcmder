@@ -3,7 +3,7 @@
         "index": 0,
         "checked": true,
         "title": {
-            "text": "Updated AT Command",
+            "text": "RADIO TEST COMMANDS",
             "disabled": true
         },
         "time": 5.0
@@ -12,16 +12,16 @@
         "index": 1,
         "checked": true,
         "title": {
-            "text": "AT+CREG",
+            "text": "data_rate ble_1Mbit",
             "disabled": false
         },
-        "time": 2.0
+        "time": 0.5
     },
     {
         "index": 2,
         "checked": true,
         "title": {
-            "text": "AT",
+            "text": "output_power pos4dBm",
             "disabled": false
         },
         "time": 0.5
@@ -30,16 +30,16 @@
         "index": 3,
         "checked": true,
         "title": {
-            "text": "",
+            "text": "start_channel 2",
             "disabled": false
         },
         "time": 0.5
     },
     {
         "index": 4,
-        "checked": false,
+        "checked": true,
         "title": {
-            "text": "",
+            "text": "start_duty_cycle_modulated_tx 90",
             "disabled": false
         },
         "time": 0.5
@@ -48,7 +48,7 @@
         "index": 5,
         "checked": false,
         "title": {
-            "text": "",
+            "text": "trasnmit_pattern pattern_11110000",
             "disabled": false
         },
         "time": 0.5
@@ -57,7 +57,7 @@
         "index": 6,
         "checked": false,
         "title": {
-            "text": "",
+            "text": "cancel",
             "disabled": false
         },
         "time": 0.5
@@ -66,7 +66,7 @@
         "index": 7,
         "checked": false,
         "title": {
-            "text": "",
+            "text": "start_tx_carrier",
             "disabled": false
         },
         "time": 0.5
@@ -75,7 +75,7 @@
         "index": 8,
         "checked": false,
         "title": {
-            "text": "",
+            "text": "start_rx",
             "disabled": false
         },
         "time": 0.5
@@ -84,7 +84,7 @@
         "index": 9,
         "checked": false,
         "title": {
-            "text": "",
+            "text": "print_rx",
             "disabled": false
         },
         "time": 0.5
