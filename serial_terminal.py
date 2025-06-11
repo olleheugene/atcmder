@@ -26,9 +26,12 @@ class SerialTerminal(QMainWindow):
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
+        utils.prepare_default_files()
         self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
         self.resize(1100, 600)
         program_icon_path = utils.get_resources(utils.APP_ICON_NAME)
+        if os.path.exists(program_icon_path):
+            self.setWindowIcon(QIcon(program_icon_path))
         self.first_load = True
         self.data_buffer = ""
         self.buffer_timeout = None
@@ -37,10 +40,9 @@ class SerialTerminal(QMainWindow):
         self.history_index = -1
         self.current_input_buffer = ""
         self.current_json_file = None  # Track currently loaded JSON file path
-        self.font_size = self.load_font_settings()  # Load saved font size or use default
+        self.font_size = self.load_font_settings().get("size", 14)  # Load saved font size or use default
+        self.font_family = self.load_font_settings().get("family", "Monaco")  # Load saved font family or use default
         self.auto_scroll_enabled = True  # Track if auto-scroll is enabled
-        if os.path.exists(program_icon_path):
-            self.setWindowIcon(QIcon(program_icon_path))
         self.comport_settings = []
         self.recent_ports = self.load_recent_ports()
         self.selected_port = port or ""
@@ -50,6 +52,7 @@ class SerialTerminal(QMainWindow):
         self.author_label = QLabel("By OllehEugene with AI")
         self.author_label.setStyleSheet("color: #888; margin-left: 12px;")
         self.status.addPermanentWidget(self.author_label)
+
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
         load_commands_action = QAction("Load CMD list", self)
@@ -100,12 +103,15 @@ class SerialTerminal(QMainWindow):
         light_action = QAction("Light", self)
         dark_action = QAction("Dark", self)
         default_action = QAction("Default", self)
-        light_action.triggered.connect(lambda: self.apply_theme("light.css"))
-        dark_action.triggered.connect(lambda: self.apply_theme("dark.css"))
-        default_action.triggered.connect(lambda: self.apply_theme("default"))
+        light_action.triggered.connect(lambda: self.apply_theme(utils.LIGHT_CSS_NAME))
+        dark_action.triggered.connect(lambda: self.apply_theme(utils.DARK_CSS_NAME))
+        default_action.triggered.connect(lambda: self.apply_theme(utils.DEFAULT_CSS_NAME))
         theme_menu.addAction(light_action)
         theme_menu.addAction(dark_action)
         theme_menu.addAction(default_action)
+
+        self.apply_theme(self.load_theme_settings())
+
         self.screen = pyte.Screen(120, 40)
         self.stream = pyte.Stream(self.screen)
         self.left_widget = QWidget()
@@ -230,7 +236,7 @@ class SerialTerminal(QMainWindow):
         self.ansi_conv = Ansi2HTMLConverter(inline=True, scheme='xterm')
         # Set default JSON file as current
         self.current_json_file = utils.USER_COMMAND_LIST
-        self.load_checkbox_lineedit_from_json(utils.USER_COMMAND_LIST)
+        self.load_checkbox_lineedit_from_json(self.current_json_file)
         self.sequential_btn = QPushButton("Sequential Send")
         self.sequential_btn.clicked.connect(self.sequential_send_commands)
         self.left_layout.addWidget(self.sequential_btn)
@@ -238,7 +244,7 @@ class SerialTerminal(QMainWindow):
         self.textedit.setFocus()
         
         # Try to auto-load last used JSON file
-        self.auto_load_last_json_file()
+        self.auto_load_selected_commandlist_file()
         
         # Show current JSON file status
         self.update_json_file_status()
@@ -275,6 +281,17 @@ class SerialTerminal(QMainWindow):
                     # The scrollbar.valueChanged signal will trigger on_scroll_position_changed.
                     return False
 
+                if ((modifiers == Qt.ControlModifier and key == Qt.Key_V) or
+                    (modifiers == Qt.MetaModifier and key == Qt.Key_V)):
+                    clipboard = QApplication.clipboard()
+                    pasted_text = clipboard.text()
+                    if pasted_text:
+                        cursor = self.textedit.textCursor()
+                        cursor.movePosition(QTextCursor.End)
+                        self.textedit.setTextCursor(cursor)
+                        self.current_input_buffer += pasted_text
+                    return False
+                
                 # Handle font size adjustment shortcuts
                 if modifiers == Qt.ControlModifier:
                     if key == Qt.Key_Plus or key == Qt.Key_Equal:  # Ctrl++ or Ctrl+=
@@ -301,7 +318,7 @@ class SerialTerminal(QMainWindow):
                             if self.current_input_buffer in self.command_history:
                                 self.command_history.remove(self.current_input_buffer)
                             self.command_history.insert(0, self.current_input_buffer)
-                            if len(self.command_history) > 50:  # Maximum 50 history entries
+                            if len(self.command_history) > self.load_history_settings().get("max_count", 50):  # Maximum 50 history entries
                                 self.command_history.pop()
                         
                         self.current_input_buffer = ""  # Clear input buffer
@@ -514,7 +531,7 @@ class SerialTerminal(QMainWindow):
     def show_about_dialog(self):
         QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + utils.APP_VERSION + "\n\nBy OllehEugene with AI")
 
-    def save_last_json_file(self, file_path):
+    def save_selected_json_filepath(self, file_path):
         """Save the last loaded JSON file path to settings"""
         try:
             # Load existing settings first
@@ -528,18 +545,18 @@ class SerialTerminal(QMainWindow):
                 except Exception:
                     settings = []
             
-            # Find existing last_json_file object and update it
+            # Find existing selected_commandlist_file object and update it
             json_file_found = False
             for item in settings:
-                if isinstance(item, dict) and "last_json_file" in item:
-                    item["last_json_file"] = file_path
+                if isinstance(item, dict) and "selected_commandlist_file" in item:
+                    item["selected_commandlist_file"] = file_path
                     json_file_found = True
                     break
             
-            # If no last_json_file object found, add new one
+            # If no selected_commandlist_file object found, add new one
             if not json_file_found:
                 json_file_obj = {
-                    "last_json_file": file_path
+                    "selected_commandlist_file": file_path
                 }
                 settings.append(json_file_obj)
             
@@ -549,24 +566,24 @@ class SerialTerminal(QMainWindow):
         except Exception as e:
             print(f"Warning: Could not save last JSON file setting: {e}")
 
-    def load_last_json_file(self):
+    def load_selected_commandlist_file(self):
         """Load the last used JSON file path from settings"""
         try:
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                 settings = json.load(f)
                 
-                # Find last_json_file in the list
+                # Find selected_commandlist_file in the list
                 for item in settings:
-                    if isinstance(item, dict) and "last_json_file" in item:
-                        return item["last_json_file"]
+                    if isinstance(item, dict) and "selected_commandlist_file" in item:
+                        return item["selected_commandlist_file"]
                 
                 return None
         except Exception:
             return None
 
-    def auto_load_last_json_file(self):
+    def auto_load_selected_commandlist_file(self):
         """Automatically load the last used JSON file on startup"""
-        last_file = self.load_last_json_file()
+        last_file = self.load_selected_commandlist_file()
         if last_file and os.path.exists(last_file) and last_file != utils.USER_COMMAND_LIST:
             try:
                 self.load_and_validate_json_file(last_file)
@@ -676,7 +693,7 @@ class SerialTerminal(QMainWindow):
             self.update_json_file_status()
             
             # Save as last loaded JSON file for next startup
-            self.save_last_json_file(file_path)
+            self.save_selected_json_filepath(file_path)
             
         except json.JSONDecodeError as e:
             QMessageBox.critical(
@@ -736,11 +753,13 @@ class SerialTerminal(QMainWindow):
         if theme_name == "default":
             QApplication.instance().setStyleSheet("")
         else:
-            theme_path = utils.get_resources(theme_name)
+            theme_path = utils.get_resources(theme_name+".css")
             if os.path.exists(theme_path):
                 with open(theme_path, "r") as f:
                     style = f.read()
                     QApplication.instance().setStyleSheet(style)
+        self.save_theme_settings(theme_name)
+
 
     def on_port_changed(self, port):
         self.selected_port = port
@@ -829,7 +848,7 @@ class SerialTerminal(QMainWindow):
                 # Add command to history
                 if command not in self.command_history:
                     self.command_history.insert(0, command)
-                    if len(self.command_history) > 50:
+                    if len(self.command_history) > self.load_history_settings().get("max_count", 50):
                         self.command_history.pop()
                 
                 # Send command with carriage return and line feed
@@ -945,15 +964,8 @@ class SerialTerminal(QMainWindow):
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
-    def process_ansi_cursor_right_spaces(self, data):
-        # ANSI 커서 오른쪽 이동 (\x1b[<N>C) → N개의 공백으로 변환
-        def repl(match):
-            n = int(match.group(1))
-            return ' ' * n
-        return re.sub(r'\x1b\[([0-9]+)C', repl, data)
-
     def update_terminal(self, data):
-        data = self.process_ansi_cursor_right_spaces(data)
+        data = utils.expand_ansi_cursor_right(data)
         scrollbar = self.textedit.verticalScrollBar()
         was_at_bottom = False
         if scrollbar:
@@ -1005,7 +1017,7 @@ class SerialTerminal(QMainWindow):
                         combined_data = self.ansi_buffer + data_str
                         
                         # Check if ANSI sequences are complete
-                        is_complete, incomplete_pos = self.is_ansi_sequence_complete(combined_data)
+                        is_complete, incomplete_pos = utils.is_ansi_sequence_complete(combined_data)
                         
                         if is_complete:
                             # All sequences are complete, emit the data
@@ -1121,7 +1133,7 @@ class SerialTerminal(QMainWindow):
                                 # Add to history
                                 if command not in self.command_history:
                                     self.command_history.insert(0, command)
-                                    if len(self.command_history) > 50:
+                                    if len(self.command_history) > self.load_history_settings().get("max_count", 50):
                                         self.command_history.pop()
                                 
                                 # Wait for the specified time interval before sending next command
@@ -1169,56 +1181,95 @@ class SerialTerminal(QMainWindow):
             # QTimer.singleShot(1000, self.try_reconnect_serial)
 
 
-    def is_ansi_sequence_complete(self, data):
-        """Check if all ANSI escape sequences in data are complete"""
-        # Enhanced ANSI pattern that covers color codes, cursor movement, and other sequences
-        # Final characters include: letters (a-zA-Z), digits in some cases, and special chars like @, ~, etc.
-        ansi_pattern = re.compile(r'\x1b\[[0-9;:<=>?]*[a-zA-Z@~]')
-        
-        # Find all potential ANSI sequence starts
-        i = 0
-        while i < len(data):
-            if data[i] == '\x1b':
-                if i + 1 < len(data) and data[i + 1] == '[':
-                    # This is an ANSI CSI sequence, check if it's complete
-                    remaining = data[i:]
-                    match = ansi_pattern.match(remaining)
-                    if not match:
-                        # Incomplete sequence found
-                        return False, i
-                    # Move past this complete sequence
-                    i += match.end()
-                else:
-                    # Incomplete escape sequence (just \x1b without [)
-                    if i + 1 >= len(data):
-                        return False, i
-                    i += 1
-            else:
-                i += 1
-        
-        return True, -1
-
-    def load_font_settings(self):
-        """Load font settings from file or return default"""
+    def load_history_settings(self):
+        """Load history settings from file or return default"""
         try:
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                 settings = json.load(f)
                 
                 # Find font object in the list
-                font_size = 14  # Default
+                for item in settings:
+                    if isinstance(item, dict) and "history" in item:
+                        history_settings = item["history"]
+                        break
+
+                return history_settings
+        except Exception:
+            history_settings.setdefault("max_count", 50)
+            return history_settings
+
+    def load_font_settings(self):
+        """Load font settings from file or return default"""
+        font_info = {}
+        try:
+            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+                
+                # Find font object in the list
                 for item in settings:
                     if isinstance(item, dict) and "font" in item:
                         font_info = item["font"]
-                        font_size = font_info.get("size", 14)
+                        # font_size = font_info.get("size", 14)
                         break
-                
+
                 # Validate font size range
-                if 6 <= font_size <= 32:
-                    return font_size
-                else:
-                    return 14
+                if (font_info.get("size", 14) > 32) or (font_info.get("size", 14) < 6):
+                    font_info.setdefault("size", 14)
+                return font_info
         except Exception:
-            return 14  # Default font size
+            font_info.setdefault("size", 14)
+            font_info.setdefault("family", "Monaco")
+            font_info.setdefault("bold", False)
+            return font_info
+
+    def load_theme_settings(self):
+        """Load th eme settings from file or return default"""
+        try:
+            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+
+                for item in settings:
+                    if isinstance(item, dict) and "theme" in item:
+                        theme_settings = item["theme"]
+                        return theme_settings
+
+        except Exception:
+            return "default"
+
+    def save_theme_settings(self, theme_name):
+        try:
+            # Load existing settings first
+            settings = []
+            if os.path.exists(utils.USER_SETTINGS):
+                try:
+                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                        settings = json.load(f)
+                    if not isinstance(settings, list):
+                        settings = []
+                except Exception:
+                    settings = []
+            
+            # Find existing font object and update it
+            theme_found = False
+            for item in settings:
+                if isinstance(item, dict) and "theme" in item:
+                    # Update only the size, keep other font properties
+                    item["theme"] = theme_name
+                    theme_found = True
+                    break
+            
+            # If no font object found, add new one
+            if not theme_found:
+                theme_obj = {
+                    "theme": "default"
+                }
+                settings.append(theme_obj)
+            
+            # Save back to file
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save theme settings: {e}")
 
     def save_font_settings(self):
         """Save current font settings to file"""
@@ -1249,7 +1300,7 @@ class SerialTerminal(QMainWindow):
                     "font": {
                         "name": "Monaco",
                         "size": self.font_size,
-                        "bold": True
+                        "bold": False
                     }
                 }
                 settings.append(font_obj)
@@ -1262,7 +1313,7 @@ class SerialTerminal(QMainWindow):
 
     def setup_terminal_font(self):
         """Setup terminal font with current font size"""
-        fixed_font = QFont("Courier New")
+        fixed_font = QFont(self.load_font_settings().get("name", "Monaco"))
         fixed_font.setStyleHint(QFont.Monospace)
         fixed_font.setPointSize(self.font_size)
         self.textedit.setFont(fixed_font)
