@@ -3,6 +3,7 @@ import os
 import json
 import re
 import serial.tools.list_ports
+import shutil
 
 # PORT_SAVE_FILE_NAME   = "atcmder_last_port.json"
 # SETTINGS_FILE_NAME    = "atcmd_settings.json"
@@ -10,12 +11,12 @@ APP_ICON_NAME         = "app_icon.png"
 CLEAR_ICON_NAME       = "clear.png"
 LEFT_ARROW_ICON_NAME  = "left-3arrow.png"
 RIGHT_ARROW_ICON_NAME = "right-3arrow.png"
-DEFAULT_CSS_NAME      = "default.css"
-LIGHT_CSS_NAME        = "light.css"
-DARK_CSS_NAME         = "dark.css"
+DEFAULT_CSS_NAME      = "default"
+LIGHT_CSS_NAME        = "light"
+DARK_CSS_NAME         = "dark"
 RESOURCES_DIR         = "resources"
 
-APP_VERSION           = "0.9.1"
+APP_VERSION           = "0.9.2"
 COMMAND_LIST_FILE     = "atcmder_cmdlist.json"
 PORTS_FILE            = "atcmder_ports.cfg"
 SETTINGS_FILE         = "atcmder_settings.cfg"
@@ -175,6 +176,35 @@ def expand_ansi_cursor_right(text):
         return ' ' * n
     return re.sub(r'\x1b\[(\d+)C', repl, text)
 
+def is_ansi_sequence_complete(self, data):
+    """Check if all ANSI escape sequences in data are complete"""
+    # Enhanced ANSI pattern that covers color codes, cursor movement, and other sequences
+    # Final characters include: letters (a-zA-Z), digits in some cases, and special chars like @, ~, etc.
+    ansi_pattern = re.compile(r'\x1b\[[0-9;:<=>?]*[a-zA-Z@~]')
+    
+    # Find all potential ANSI sequence starts
+    i = 0
+    while i < len(data):
+        if data[i] == '\x1b':
+            if i + 1 < len(data) and data[i + 1] == '[':
+                # This is an ANSI CSI sequence, check if it's complete
+                remaining = data[i:]
+                match = ansi_pattern.match(remaining)
+                if not match:
+                    # Incomplete sequence found
+                    return False, i
+                # Move past this complete sequence
+                i += match.end()
+            else:
+                # Incomplete escape sequence (just \x1b without [)
+                if i + 1 >= len(data):
+                    return False, i
+                i += 1
+        else:
+            i += 1
+    
+    return True, -1
+
 def process_ansi_spacing(data: str) -> str:
     """Process only space-related ANSI control characters to implement proper spacing and alignment."""
     # Tab character (\t) processing - convert to 8 spaces
@@ -289,3 +319,11 @@ def process_ansi_spacing(data: str) -> str:
         data = '\n'.join(processed_lines)
     
     return data
+
+def prepare_default_files():
+    if not os.path.exists(USER_COMMAND_LIST):
+        shutil.copy(get_resources(COMMAND_LIST_FILE), USER_COMMAND_LIST)
+    if not os.path.exists(USER_PORT_LIST):
+        shutil.copy(get_resources(PORTS_FILE), USER_PORT_LIST)
+    if not os.path.exists(USER_SETTINGS):
+        shutil.copy(get_resources(SETTINGS_FILE), USER_SETTINGS)
