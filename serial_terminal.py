@@ -6,13 +6,14 @@ import time
 import json
 import re
 import pyte
+import subprocess
 from PySide6.QtWidgets import (
     QMainWindow, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog
 )
 from PySide6.QtGui import QIcon, QFont, QTextCursor, QAction
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer
 from ansi2html import Ansi2HTMLConverter
-from utils import get_resources, expand_ansi_tabs, expand_ansi_cursor_right, process_ansi_spacing,USER_COMMAND_LIST, USER_PORT_LIST, USER_PORT_LIST, USER_SETTINGS, APP_VERSION
+import utils
 
 import serial.tools.list_ports
 def list_serial_ports():
@@ -21,12 +22,13 @@ def list_serial_ports():
 class SerialTerminal(QMainWindow):
     serial_data_signal = Signal(str)
     sequential_complete_signal = Signal(bool, str)  # success flag, message
+    reconnect_signal = Signal()
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
-        self.setWindowTitle("AT Commander v" + APP_VERSION)
+        self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
         self.resize(1100, 600)
-        program_icon_path = get_resources("app_icon.png")
+        program_icon_path = utils.get_resources(utils.APP_ICON_NAME)
         self.first_load = True
         self.data_buffer = ""
         self.buffer_timeout = None
@@ -53,6 +55,9 @@ class SerialTerminal(QMainWindow):
         load_commands_action = QAction("Load CMD list", self)
         load_commands_action.triggered.connect(self.load_command_list_from_file)
         file_menu.addAction(load_commands_action)
+        open_config_folder_action = QAction("Open Configfile folder", self)
+        open_config_folder_action.triggered.connect(self.open_config_folder)
+        file_menu.addAction(open_config_folder_action)
         file_menu.addSeparator()
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
@@ -81,6 +86,8 @@ class SerialTerminal(QMainWindow):
         view_menu.addAction(reset_font_action)
         
         view_menu.addSeparator()
+
+        self.reconnect_signal.connect(self.try_reconnect_serial)
         
         # Add current font size display
         self.font_size_action = QAction(f"Current Font Size: {self.font_size}", self)
@@ -175,7 +182,7 @@ class SerialTerminal(QMainWindow):
         
         self.textedit.document().setMaximumBlockCount(0)
         self.clear_btn = QPushButton()
-        self.clear_btn.setIcon(QIcon(get_resources("clear.png")))
+        self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
         self.clear_btn.setFixedSize(24, 24)
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
@@ -193,7 +200,7 @@ class SerialTerminal(QMainWindow):
         self.toggle_btn.setFixedWidth(24)
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.setToolTip("Expand/Collapse the terminal window")
-        self.toggle_btn.setIcon(QIcon(get_resources("left-3arrow.png")))
+        self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.LEFT_ARROW_ICON_NAME)))
         self.toggle_btn.clicked.connect(self.toggle_left_panel)
         btn_widget = QWidget()
         btn_layout = QVBoxLayout()
@@ -222,8 +229,8 @@ class SerialTerminal(QMainWindow):
         self.sequential_complete_signal.connect(self.on_sequential_complete)
         self.ansi_conv = Ansi2HTMLConverter(inline=True, scheme='xterm')
         # Set default JSON file as current
-        self.current_json_file = USER_COMMAND_LIST
-        self.load_checkbox_lineedit_from_json(USER_COMMAND_LIST)
+        self.current_json_file = utils.USER_COMMAND_LIST
+        self.load_checkbox_lineedit_from_json(utils.USER_COMMAND_LIST)
         self.sequential_btn = QPushButton("Sequential Send")
         self.sequential_btn.clicked.connect(self.sequential_send_commands)
         self.left_layout.addWidget(self.sequential_btn)
@@ -236,9 +243,9 @@ class SerialTerminal(QMainWindow):
         # Show current JSON file status
         self.update_json_file_status()
         self.last_ports = set(list_serial_ports())
-        self.port_monitor_timer = QTimer(self)
-        self.port_monitor_timer.timeout.connect(self.check_ports_changed)
-        self.port_monitor_timer.start(1000)  # Check for port changes every 1 second
+        # self.port_monitor_timer = QTimer(self) 
+        # self.port_monitor_timer.timeout.connect(self.check_ports_changed)
+        # self.port_monitor_timer.start(1000)  # Check for port changes every 1 second
 
     def eventFilter(self, obj, event):
         if obj is self.textedit:
@@ -299,6 +306,8 @@ class SerialTerminal(QMainWindow):
                         
                         self.current_input_buffer = ""  # Clear input buffer
                         self.history_index = -1  # Reset history index
+                        self.textedit.insertHtml("<br>")
+                        self.textedit.moveCursor(QTextCursor.End)
                         return True  # Event handling complete
                     
                     elif key == Qt.Key_Up:
@@ -313,7 +322,20 @@ class SerialTerminal(QMainWindow):
                             # Replace current line input in text editor
                             cursor = self.textedit.textCursor()
                             cursor.movePosition(QTextCursor.End)
-                            cursor.movePosition(QTextCursor.StartOfLine, QTextCursor.KeepAnchor)
+                            cursor.select(QTextCursor.LineUnderCursor)
+                            line_text = cursor.selectedText()
+
+                            # 프롬프트 추출 (예: 'uart:~$ ', 'user@host:~$ ', '> ', '$ ', '# ' 등)
+                            prompt_match = re.match(r'^(.+\$\s|.+#\s|.+>\s|[>\$\#]\s)', line_text)
+                            if prompt_match:
+                                prompt = prompt_match.group(1)
+                            else:
+                                prompt = ''
+
+                            # 프롬프트 뒤만 교체
+                            cursor.movePosition(QTextCursor.StartOfLine)
+                            cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len(prompt))
+                            cursor.movePosition(QTextCursor.EndOfLine, QTextCursor.KeepAnchor)
                             cursor.removeSelectedText()
                             cursor.insertText(historic_command)
                         return True
@@ -330,7 +352,20 @@ class SerialTerminal(QMainWindow):
                             # Replace current line input in text editor
                             cursor = self.textedit.textCursor()
                             cursor.movePosition(QTextCursor.End)
-                            cursor.movePosition(QTextCursor.StartOfLine, QTextCursor.KeepAnchor)
+                            cursor.select(QTextCursor.LineUnderCursor)
+                            line_text = cursor.selectedText()
+
+                            # 프롬프트 추출 (예: 'uart:~$ ', 'user@host:~$ ', '> ', '$ ', '# ' 등)
+                            prompt_match = re.match(r'^(.+\$\s|.+#\s|.+>\s|[>\$\#]\s)', line_text)
+                            if prompt_match:
+                                prompt = prompt_match.group(1)
+                            else:
+                                prompt = ''
+
+                            # 프롬프트 뒤만 교체
+                            cursor.movePosition(QTextCursor.StartOfLine)
+                            cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len(prompt))
+                            cursor.movePosition(QTextCursor.EndOfLine, QTextCursor.KeepAnchor)
                             cursor.removeSelectedText()
                             cursor.insertText(historic_command)
                         elif self.history_index == 0:
@@ -340,7 +375,20 @@ class SerialTerminal(QMainWindow):
                             
                             cursor = self.textedit.textCursor()
                             cursor.movePosition(QTextCursor.End)
-                            cursor.movePosition(QTextCursor.StartOfLine, QTextCursor.KeepAnchor)
+                            cursor.select(QTextCursor.LineUnderCursor)
+                            line_text = cursor.selectedText()
+
+                            # 프롬프트 추출 (예: 'uart:~$ ', 'user@host:~$ ', '> ', '$ ', '# ' 등)
+                            prompt_match = re.match(r'^(.+\$\s|.+#\s|.+>\s|[>\$\#]\s)', line_text)
+                            if prompt_match:
+                                prompt = prompt_match.group(1)
+                            else:
+                                prompt = ''
+
+                            # 프롬프트 뒤만 교체
+                            cursor.movePosition(QTextCursor.StartOfLine)
+                            cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len(prompt))
+                            cursor.movePosition(QTextCursor.EndOfLine, QTextCursor.KeepAnchor)
                             cursor.removeSelectedText()
                         return True
                     
@@ -387,7 +435,7 @@ class SerialTerminal(QMainWindow):
     def save_recent_ports(self):
         # Save recent port list
         try:
-            with open(USER_PORT_LIST, "w", encoding="utf-8") as f:
+            with open(utils.USER_PORT_LIST, "w", encoding="utf-8") as f:
                 json.dump(self.recent_ports, f, indent=2)
         except Exception:
             pass
@@ -404,7 +452,7 @@ class SerialTerminal(QMainWindow):
     def load_recent_ports(self):
         # Load recent port list from USER_PORT_LIST
         try:
-            with open(USER_PORT_LIST, "r", encoding="utf-8") as f:
+            with open(utils.USER_PORT_LIST, "r", encoding="utf-8") as f:
                 ports = json.load(f)
                 # Index migration and sorting
                 migrated = False
@@ -416,7 +464,7 @@ class SerialTerminal(QMainWindow):
                 for i, entry in enumerate(ports):
                     entry['index'] = i
                 if migrated:
-                    with open(USER_PORT_LIST, "w", encoding="utf-8") as fw:
+                    with open(utils.USER_PORT_LIST, "w", encoding="utf-8") as fw:
                         json.dump(ports, fw, indent=2)
                 return ports
         except Exception:
@@ -441,7 +489,7 @@ class SerialTerminal(QMainWindow):
         for i, entry in enumerate(ports):
             entry['index'] = i
         try:
-            with open(USER_PORT_LIST, "w", encoding="utf-8") as f:
+            with open(utils.USER_PORT_LIST, "w", encoding="utf-8") as f:
                 json.dump(ports, f, indent=2)
         except Exception:
             pass
@@ -453,15 +501,15 @@ class SerialTerminal(QMainWindow):
         """Update status bar to show current JSON file being used"""
         if self.current_json_file:
             filename = os.path.basename(self.current_json_file)
-            if self.current_json_file == USER_COMMAND_LIST:
+            if self.current_json_file == utils.USER_COMMAND_LIST:
                 # self.update_status_bar(f"Using default command list: {filename}")
-                self.setWindowTitle("AT Commander v" + APP_VERSION)
+                self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
             else:
                 # self.update_status_bar(f"Using custom command list: {filename}")
-                self.setWindowTitle("AT Commander v" + APP_VERSION + f" - {filename}")
+                self.setWindowTitle("AT Commander v" + utils.APP_VERSION + f" - {filename}")
         else:
             self.update_status_bar("No command list loaded")
-            self.setWindowTitle("AT Commander v" + APP_VERSION)
+            self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
 
     def show_about_dialog(self):
         QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + APP_VERSION + "\n\nBy OllehEugene with AI")
@@ -496,7 +544,7 @@ class SerialTerminal(QMainWindow):
                 settings.append(json_file_obj)
             
             # Save back to file
-            with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
                 json.dump(settings, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"Warning: Could not save last JSON file setting: {e}")
@@ -504,7 +552,7 @@ class SerialTerminal(QMainWindow):
     def load_last_json_file(self):
         """Load the last used JSON file path from settings"""
         try:
-            with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                 settings = json.load(f)
                 
                 # Find last_json_file in the list
@@ -519,14 +567,14 @@ class SerialTerminal(QMainWindow):
     def auto_load_last_json_file(self):
         """Automatically load the last used JSON file on startup"""
         last_file = self.load_last_json_file()
-        if last_file and os.path.exists(last_file) and last_file != USER_COMMAND_LIST:
+        if last_file and os.path.exists(last_file) and last_file != utils.USER_COMMAND_LIST:
             try:
                 self.load_and_validate_json_file(last_file)
-                print(f"Auto-loaded last JSON file: {os.path.basename(last_file)}")
+                # print(f"Auto-loaded last JSON file: {os.path.basename(last_file)}")
             except Exception as e:
                 print(f"Could not auto-load last JSON file: {e}")
                 # Fall back to default
-                self.current_json_file = USER_COMMAND_LIST
+                self.current_json_file = utils.USER_COMMAND_LIST
                 self.update_json_file_status()
 
     def load_command_list_from_file(self):
@@ -677,7 +725,7 @@ class SerialTerminal(QMainWindow):
 
         
         # Save the loaded data to the currently selected JSON file (if any) or default file
-        target_file = self.current_json_file if self.current_json_file else USER_COMMAND_LIST
+        target_file = self.current_json_file if self.current_json_file else utils.USER_COMMAND_LIST
         try:
             with open(target_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
@@ -688,7 +736,7 @@ class SerialTerminal(QMainWindow):
         if theme_name == "default":
             QApplication.instance().setStyleSheet("")
         else:
-            theme_path = get_resources(theme_name)
+            theme_path = utils.get_resources(theme_name)
             if os.path.exists(theme_path):
                 with open(theme_path, "r") as f:
                     style = f.read()
@@ -767,10 +815,10 @@ class SerialTerminal(QMainWindow):
     def toggle_left_panel(self):
         if self.left_panel_visible:
             self.splitter.setSizes([0, 24, 850])
-            self.toggle_btn.setIcon(QIcon(get_resources("right-3arrow.png")))
+            self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.RIGHT_ARROW_ICON_NAME)))
         else:
             self.splitter.setSizes([250, 24, 850])
-            self.toggle_btn.setIcon(QIcon(get_resources("left-3arrow.png")))
+            self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.LEFT_ARROW_ICON_NAME)))
         self.left_panel_visible = not self.left_panel_visible
 
     def send_lineedit_command(self, index):
@@ -792,7 +840,7 @@ class SerialTerminal(QMainWindow):
                 # self.update_status_bar(f"Sent: {command}")
                 
                 # Display sent command in terminal for verification
-                self.serial_data_signal.emit(f"> {command}")
+                self.serial_data_signal.emit(f"{command}")
                 
             except Exception as e:
                 # Handle encoding or serial errors
@@ -806,7 +854,7 @@ class SerialTerminal(QMainWindow):
         """Save checkbox/lineedit data to JSON file.
         If filename is None, saves to currently selected JSON file or default file."""
         if filename is None:
-            filename = self.current_json_file if self.current_json_file else USER_COMMAND_LIST
+            filename = self.current_json_file if self.current_json_file else utils.USER_COMMAND_LIST
             
         data = []
         # Read JSON first to preserve existing time/disabled values
@@ -897,7 +945,15 @@ class SerialTerminal(QMainWindow):
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
+    def process_ansi_cursor_right_spaces(self, data):
+        # ANSI 커서 오른쪽 이동 (\x1b[<N>C) → N개의 공백으로 변환
+        def repl(match):
+            n = int(match.group(1))
+            return ' ' * n
+        return re.sub(r'\x1b\[([0-9]+)C', repl, data)
+
     def update_terminal(self, data):
+        data = self.process_ansi_cursor_right_spaces(data)
         scrollbar = self.textedit.verticalScrollBar()
         was_at_bottom = False
         if scrollbar:
@@ -906,32 +962,26 @@ class SerialTerminal(QMainWindow):
             tolerance = max(15, self.font_size)
             was_at_bottom = (max_value - current_value) <= tolerance
 
-        # 현재 스크롤 위치 저장 (auto-scroll off일 때 복원용)
         saved_scroll_value = scrollbar.value() if scrollbar else None
 
-        # 커서는 항상 마지막으로 이동
         end_cursor = self.textedit.textCursor()
         end_cursor.movePosition(QTextCursor.End)
         self.textedit.setTextCursor(end_cursor)
 
-        # 데이터 추가
         try:
             html_output = self.ansi_conv.convert(data, full=False)
             if html_output.strip():
                 html_output = html_output.replace('\n', '<br>')
-                import re
                 html_output = re.sub(r'  +', lambda m: '&nbsp;' * len(m.group()), html_output)
                 self.textedit.insertHtml(html_output)
         except Exception:
             if data.strip():
                 self.textedit.insertPlainText(data)
 
-        # 스크롤 동작 제어
         if self.auto_scroll_enabled and was_at_bottom:
             self.textedit.moveCursor(QTextCursor.End)
             self.textedit.ensureCursorVisible()
         else:
-            # auto-scroll이 꺼진 경우: 화면(뷰포트) 위치를 복원
             if scrollbar and saved_scroll_value is not None:
                 scrollbar.setValue(saved_scroll_value)
 
@@ -1000,6 +1050,14 @@ class SerialTerminal(QMainWindow):
                 self.serial = None
                 break
             except Exception:
+                try:
+                    if self.serial and self.serial.is_open:
+                        self.serial.close()
+                except Exception:
+                    pass
+                self.reconnect_signal.emit()
+                self.connect_btn.setChecked(False)
+                self.connect_btn.setText("Connect")
                 self.running = False
                 break
             time.sleep(0.01)  # Reduce CPU usage
@@ -1107,6 +1165,9 @@ class SerialTerminal(QMainWindow):
         if current_ports != self.last_ports:
             self.refresh_serial_ports()
             self.last_ports = current_ports
+            # 자동 재연결 시도
+            # QTimer.singleShot(1000, self.try_reconnect_serial)
+
 
     def is_ansi_sequence_complete(self, data):
         """Check if all ANSI escape sequences in data are complete"""
@@ -1164,9 +1225,9 @@ class SerialTerminal(QMainWindow):
         try:
             # Load existing settings first
             settings = []
-            if os.path.exists(USER_SETTINGS):
+            if os.path.exists(utils.USER_SETTINGS):
                 try:
-                    with open(USER_SETTINGS, "r", encoding="utf-8") as f:
+                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                         settings = json.load(f)
                     if not isinstance(settings, list):
                         settings = []
@@ -1194,7 +1255,7 @@ class SerialTerminal(QMainWindow):
                 settings.append(font_obj)
             
             # Save back to file
-            with open(USER_SETTINGS, "w", encoding="utf-8") as f:
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
                 json.dump(settings, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"Warning: Could not save font settings: {e}")
@@ -1259,3 +1320,29 @@ class SerialTerminal(QMainWindow):
             if self.auto_scroll_enabled:
                 self.auto_scroll_enabled = False
                 self.update_status_bar("Auto-scroll disabled (scroll to bottom to re-enable)")
+
+    def try_reconnect_serial(self):
+        if self.serial and self.serial.is_open:
+            return
+        try:
+            self.serial = serial.Serial(self.selected_port, self.baudrate, timeout=0.1)
+            self.running = True
+            self.thread = threading.Thread(target=self.read_serial_data, daemon=True)
+            self.thread.start()
+            self.update_status_bar(f"Reconnected to {self.selected_port} @ {self.baudrate} bps")
+            self.connect_btn.setChecked(True)
+            self.connect_btn.setText("Disconnect")
+            self.save_recent_port(self.selected_port)
+        except serial.SerialException as e:
+            # self.update_status_bar(f"Reconnect failed: {e}")
+            QTimer.singleShot(500, self.try_reconnect_serial)
+
+    def open_config_folder(self):
+        from utils import get_user_config_path
+        config_path = get_user_config_path("dummy")
+        config_dir = os.path.dirname(config_path)
+
+        try:
+            subprocess.Popen(["open", config_dir])
+        except Exception as e:
+            self.update_status_bar(f"Could not open config folder: {e}")

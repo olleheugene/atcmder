@@ -4,9 +4,8 @@ import json
 import re
 import serial.tools.list_ports
 
-CONFIG_FILE = "atcmder_config.json"
-PORT_SAVE_FILE_NAME   = "atcmder_last_port.json"
-SETTINGS_FILE_NAME    = "atcmd_settings.json"
+# PORT_SAVE_FILE_NAME   = "atcmder_last_port.json"
+# SETTINGS_FILE_NAME    = "atcmd_settings.json"
 APP_ICON_NAME         = "app_icon.png"
 CLEAR_ICON_NAME       = "clear.png"
 LEFT_ARROW_ICON_NAME  = "left-3arrow.png"
@@ -16,7 +15,7 @@ LIGHT_CSS_NAME        = "light.css"
 DARK_CSS_NAME         = "dark.css"
 RESOURCES_DIR         = "resources"
 
-APP_VERSION           = "0.9"
+APP_VERSION           = "0.9.1"
 COMMAND_LIST_FILE     = "atcmder_cmdlist.json"
 PORTS_FILE            = "atcmder_ports.cfg"
 SETTINGS_FILE         = "atcmder_settings.cfg"
@@ -47,44 +46,44 @@ def get_resources(resource_file):
 def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
 
-def load_comport_settings():
-    settings_path = get_resources(SETTINGS_FILE_NAME)
-    default_settings = {
-        "comport_settings": {
-            "port": "",
-            "baudrate": 115200,
-            "parity": "N",
-            "stopbits": 1,
-            "bytesize": 8,
-            "timeout": 0.1
-        }
-    }
-    if not os.path.exists(settings_path):
-        try:
-            with open(settings_path, 'w', encoding='utf-8') as f:
-                json.dump(default_settings, f, indent=4)
-            print(f"Default settings file created: {settings_path}")
-        except Exception as e:
-            print(f"Error creating default settings file: {e}")
-            return default_settings # Return defaults if file creation fails
-    try:
-        with open(settings_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading comport settings from {settings_path}: {e}")
-        return default_settings # Return defaults if file load fails
+# def load_comport_settings():
+#     settings_path = get_resources(SETTINGS_FILE_NAME)
+#     default_settings = {
+#         "comport_settings": {
+#             "port": "",
+#             "baudrate": 115200,
+#             "parity": "N",
+#             "stopbits": 1,
+#             "bytesize": 8,
+#             "timeout": 0.1
+#         }
+#     }
+#     if not os.path.exists(settings_path):
+#         try:
+#             with open(settings_path, 'w', encoding='utf-8') as f:
+#                 json.dump(default_settings, f, indent=4)
+#             print(f"Default settings file created: {settings_path}")
+#         except Exception as e:
+#             print(f"Error creating default settings file: {e}")
+#             return default_settings # Return defaults if file creation fails
+#     try:
+#         with open(settings_path, 'r', encoding='utf-8') as f:
+#             return json.load(f)
+#     except Exception as e:
+#         print(f"Error loading comport settings from {settings_path}: {e}")
+#         return default_settings # Return defaults if file load fails
 
-def save_comport_settings(settings_data): # Changed parameter name
-    settings_path = get_resources(SETTINGS_FILE_NAME)
-    try:
-        with open(settings_path, 'w', encoding='utf-8') as f:
-            json.dump(settings_data, f, indent=4)
-    except Exception as e:
-        print(f"Error saving comport settings to {settings_path}: {e}")
+# def save_comport_settings(settings_data): # Changed parameter name
+#     settings_path = get_resources(SETTINGS_FILE_NAME)
+#     try:
+#         with open(settings_path, 'w', encoding='utf-8') as f:
+#             json.dump(settings_data, f, indent=4)
+#     except Exception as e:
+#         print(f"Error saving comport settings to {settings_path}: {e}")
 
 
-def load_checkbox_lineedit_config(config_file_name=CONFIG_FILE):
-    json_path = get_resources(config_file_name)
+def load_checkbox_lineedit_config(config_file_name=COMMAND_LIST_FILE):
+    json_path = get_user_config_path(config_file_name)
     default_data = []
     # Default data generation logic (should be dynamically generated based on number of checkboxes, assuming 10 here for example)
     # In practice, should get UI element count from SerialTerminal class
@@ -118,32 +117,32 @@ def load_checkbox_lineedit_config(config_file_name=CONFIG_FILE):
         print(f"Error loading checkbox/lineedit config from {json_path}: {e}")
         return default_data
 
-def save_checkbox_lineedit_config(data, config_file_name=CONFIG_FILE):
-    json_path = get_resources(config_file_name)
+def save_checkbox_lineedit_config(data, config_file_name=COMMAND_LIST_FILE):
+    json_path = get_user_config_path(config_file_name)
     try:
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Error saving checkbox/lineedit config to {json_path}: {e}")
 
-def load_last_port_util():
-    port_file = get_resources(PORT_SAVE_FILE_NAME)
-    if os.path.exists(port_file):
-        try:
-            with open(port_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get("selected_port", "")
-        except json.JSONDecodeError:
-            print(f"Error decoding JSON from {port_file}")
-    return ""
+# def load_last_port_util():
+#     port_file = get_resources(PORT_SAVE_FILE_NAME)
+#     if os.path.exists(port_file):
+#         try:
+#             with open(port_file, 'r', encoding='utf-8') as f:
+#                 data = json.load(f)
+#                 return data.get("selected_port", "")
+#         except json.JSONDecodeError:
+#             print(f"Error decoding JSON from {port_file}")
+#     return ""
 
-def save_last_port_util(port):
-    port_file = get_resources(PORT_SAVE_FILE_NAME)
-    try:
-        with open(port_file, 'w', encoding='utf-8') as f:
-            json.dump({"selected_port": port}, f, indent=4)
-    except Exception as e:
-        print(f"Error saving last port to {port_file}: {e}")
+# def save_last_port_util(port):
+#     port_file = get_resources(PORT_SAVE_FILE_NAME)
+#     try:
+#         with open(port_file, 'w', encoding='utf-8') as f:
+#             json.dump({"selected_port": port}, f, indent=4)
+#     except Exception as e:
+#         print(f"Error saving last port to {port_file}: {e}")
 
 def expand_ansi_tabs(text, tabsize=4):
     ansi_pattern = re.compile(r'(\x1b\[[0-9;]*m)')
