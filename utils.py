@@ -16,7 +16,7 @@ LIGHT_CSS_NAME        = "light"
 DARK_CSS_NAME         = "dark"
 RESOURCES_DIR         = "resources"
 
-APP_VERSION           = "0.9.3"
+APP_VERSION           = "0.9.4"
 COMMAND_LIST_FILE     = "atcmder_cmdlist.json"
 PORTS_FILE            = "atcmder_ports.cfg"
 SETTINGS_FILE         = "atcmder_settings.cfg"

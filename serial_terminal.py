@@ -993,54 +993,49 @@ class SerialTerminal(QMainWindow):
     def read_serial_data(self):
         """Thread function to read serial data"""
         buffer_start_time = None
-        
+
         while self.running and self.serial and self.serial.is_open:
             try:
                 if self.serial.in_waiting > 0:
                     data_bytes = self.serial.read(self.serial.in_waiting)
                     try:
-                        # Try UTF-8 decoding
                         data_str = data_bytes.decode('utf-8', errors='replace')
                     except UnicodeDecodeError:
-                        # Fall back to latin-1 if UTF-8 fails
                         data_str = data_bytes.decode('latin-1', errors='replace')
-                    
+
                     if data_str:
                         # Combine with any buffered incomplete ANSI sequence
                         combined_data = self.ansi_buffer + data_str
-                        
-                        # Check if ANSI sequences are complete
-                        is_complete, incomplete_pos = utils.is_ansi_sequence_complete(combined_data)
-                        
-                        if is_complete:
-                            # All sequences are complete, emit the data
-                            self.ansi_buffer = ""
-                            buffer_start_time = None
-                            self.serial_data_signal.emit(combined_data)
-                        else:
-                            # Incomplete sequence found, buffer the incomplete part
-                            complete_part = combined_data[:incomplete_pos]
-                            incomplete_part = combined_data[incomplete_pos:]
-                            
-                            # Emit the complete part if it exists
-                            if complete_part:
-                                self.serial_data_signal.emit(complete_part)
-                            
-                            # Buffer the incomplete part
-                            self.ansi_buffer = incomplete_part
-                            
-                            # Set buffer start time for timeout
-                            if buffer_start_time is None:
-                                buffer_start_time = time.time()
+                        self.ansi_buffer = ""
+
+                        # split lines by specific characters
+                        lines = re.split(r'(\r\n|\n|\r)', combined_data)
+                        i = 0
+                        while i < len(lines) - 1:
+                            line = lines[i]
+                            sep = lines[i+1]
+                            full_line = line + sep
+                            is_complete, incomplete_pos = utils.is_ansi_sequence_complete(full_line)
+                            if is_complete:
+                                self.serial_data_signal.emit(full_line)
+                            else:
+                                self.ansi_buffer = full_line + ''.join(lines[i+2:])
+                                break
+                            i += 2
+
+                        # Leave the last line (without a newline) in the buffer
+                        if i == len(lines) - 1:
+                            self.ansi_buffer = lines[i]
+                        # Update timestamp since data has been received
+                        buffer_start_time = time.time()
                 else:
                     # Check for buffer timeout (100ms)
-                    if self.ansi_buffer and buffer_start_time is not None:
-                        if time.time() - buffer_start_time > 0.1:  # 100ms timeout
-                            # Flush the buffer
+                    if self.ansi_buffer:
+                        if buffer_start_time is not None and (time.time() - buffer_start_time > 0.1):
+                            # Flush the buffer (print out)
                             self.serial_data_signal.emit(self.ansi_buffer)
                             self.ansi_buffer = ""
                             buffer_start_time = None
-                            
             except serial.SerialException:
                 # Disconnect on serial port error
                 self.running = False
