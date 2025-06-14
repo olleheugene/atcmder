@@ -16,7 +16,7 @@ LIGHT_CSS_NAME        = "light"
 DARK_CSS_NAME         = "dark"
 RESOURCES_DIR         = "resources"
 
-APP_VERSION           = "0.9.4"
+APP_VERSION           = "0.9.5"
 COMMAND_LIST_FILE     = "atcmder_cmdlist.json"
 PORTS_FILE            = "atcmder_ports.cfg"
 SETTINGS_FILE         = "atcmder_settings.cfg"
@@ -144,6 +144,16 @@ def save_checkbox_lineedit_config(data, config_file_name=COMMAND_LIST_FILE):
 #             json.dump({"selected_port": port}, f, indent=4)
 #     except Exception as e:
 #         print(f"Error saving last port to {port_file}: {e}")
+
+def get_app_data_folder():
+    """Return the path to the app's data folder (cross-platform)"""
+    if sys.platform.startswith("win"):
+        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "atcmder")
+    elif sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/atcmder")
+    else:
+        return os.path.expanduser("~/.atcmder")
+
 
 def expand_ansi_tabs(text, tabsize=4):
     ansi_pattern = re.compile(r'(\x1b\[[0-9;]*m)')
