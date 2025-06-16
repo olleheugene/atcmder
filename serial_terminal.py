@@ -33,6 +33,11 @@ class SerialTerminal(QMainWindow):
         self.command_history = []
         self.history_index = -1
         self.current_input_buffer = ""
+
+        self._status_timer = QTimer()
+        self._status_timer.setSingleShot(True)
+        self._status_timer.timeout.connect(self._restore_connection_status)
+
         self.load_command_history()
         program_icon_path = utils.get_resources(utils.APP_ICON_NAME)
         if os.path.exists(program_icon_path):
@@ -549,19 +554,33 @@ class SerialTerminal(QMainWindow):
 
     def update_status_bar(self, message):
         self.status.showMessage(message)
+        
+        if not message.startswith("Connect") and not message.startswith("Disconnect") and not message.startswith("Reconnect"):
+            if self._status_timer.isActive():
+                self._status_timer.stop()
+            
+            self._status_timer.start(1000)  # 1000ms
+
+    def _restore_connection_status(self):
+        if self.serial and self.serial.is_open:
+            connection_status = f"Connected to {self.selected_port} @ {self.baudrate} bps"
+        else:
+            connection_status = "Disconnected"
+        
+        self.status.showMessage(connection_status)
 
     def update_json_file_status(self):
         """Update status bar to show current JSON file being used"""
         if self.current_json_file:
             filename = os.path.basename(self.current_json_file)
             if self.current_json_file == utils.USER_COMMAND_LIST:
-                # self.update_status_bar(f"Using default command list: {filename}")
+                self.update_status_bar(f"Using default command list: {filename}")
                 self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
             else:
-                # self.update_status_bar(f"Using custom command list: {filename}")
+                self.update_status_bar(f"Using custom command list: {filename}")
                 self.setWindowTitle("AT Commander v" + utils.APP_VERSION + f" - {filename}")
         else:
-            # self.update_status_bar("No command list loaded")
+            self.update_status_bar("No command list loaded")
             self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
 
     def show_about_dialog(self):
@@ -1120,11 +1139,11 @@ class SerialTerminal(QMainWindow):
                                 command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
                                 bytes_written = self.serial.write(command_bytes)
                                 
-                                # # Update status bar with success message including time interval
-                                # def update_status(cmd, num, total, interval):
-                                #     self.update_status_bar(f"Sequential Send [{num}/{total}]: {cmd} (delay: {interval}s)")
+                                # Update status bar with success message including time interval
+                                def update_status(cmd, num, total, interval):
+                                    self.update_status_bar(f"Sequential Send [{num}/{total}]: {cmd} (delay: {interval}s)")
                                 
-                                # QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval: update_status(cmd, num, total, interval))
+                                QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval: update_status(cmd, num, total, interval))
                                 
                                 # Display sent command in terminal for verification
                                 self.serial_data_signal.emit(f"{command}\r\n")
@@ -1139,10 +1158,10 @@ class SerialTerminal(QMainWindow):
                                 time.sleep(time_interval)
                                 
                             except Exception as e:
-                                # def update_error(err):
-                                #     self.update_status_bar(f"Sequential send error: {err}")
+                                def update_error(err):
+                                    self.update_status_bar(f"Sequential send error: {err}")
                                     
-                                # QTimer.singleShot(0, lambda err=str(e): update_error(err))
+                                QTimer.singleShot(0, lambda err=str(e): update_error(err))
                                 success = False
                                 error_msg = str(e)
                                 break
@@ -1169,7 +1188,7 @@ class SerialTerminal(QMainWindow):
         """Handle sequential send completion in the main thread"""
         self.sequential_btn.setEnabled(True)
         self.sequential_btn.setText("Sequential Send")
-        # self.update_status_bar(message)
+        self.update_status_bar(message)
 
     def load_history_settings(self):
         """히스토리 설정 로딩"""
@@ -1375,7 +1394,7 @@ class SerialTerminal(QMainWindow):
             self.font_size += 1
             self.setup_terminal_font()
             self.save_font_settings()
-            # self.update_status_bar(f"Font size: {self.font_size}")
+            self.update_status_bar(f"Font size: {self.font_size}")
     
     def decrease_font_size(self):
         """Decrease terminal font size"""
@@ -1383,7 +1402,7 @@ class SerialTerminal(QMainWindow):
             self.font_size -= 1
             self.setup_terminal_font()
             self.save_font_settings()
-            # self.update_status_bar(f"Font size: {self.font_size}")
+            self.update_status_bar(f"Font size: {self.font_size}")
     
     def reset_font_size(self):
         """Reset terminal font size to default"""
@@ -1410,7 +1429,7 @@ class SerialTerminal(QMainWindow):
             self.connect_btn.setText("Disconnect")
             self.save_recent_port(self.selected_port)
         except serial.SerialException as e:
-            # self.update_status_bar(f"Reconnect failed: {e}")
+            self.update_status_bar(f"Reconnect failed: {e}")
             QTimer.singleShot(500, self.try_reconnect_serial)
 
     def open_config_folder(self):
