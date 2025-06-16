@@ -1,10 +1,10 @@
-import sys
 import os
 import serial
 import threading
 import time
 import json
 import re
+import subprocess
 from PySide6.QtWidgets import (
     QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog
 )
@@ -559,7 +559,7 @@ class SerialTerminal(QMainWindow):
             if self._status_timer.isActive():
                 self._status_timer.stop()
             
-            self._status_timer.start(1000)  # 1000ms
+            self._status_timer.start(2000)  # 2000ms
 
     def _restore_connection_status(self):
         if self.serial and self.serial.is_open:
@@ -894,6 +894,7 @@ class SerialTerminal(QMainWindow):
             self.splitter.setSizes([250, 24, 850])
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.LEFT_ARROW_ICON_NAME)))
         self.left_panel_visible = not self.left_panel_visible
+        self.terminal_widget.update_scrollbar() 
 
     def send_lineedit_command(self, index):
         command = self.lineedits[index].text()
