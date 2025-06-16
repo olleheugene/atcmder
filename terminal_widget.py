@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy
-from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette
+from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication
 from PySide6.QtCore import Qt, QTimer
 import re
 
-MAX_TERMINAL_LINES = 2000
+MAX_TERMINAL_LINES = 9999
 
 class TerminalWidget(QAbstractScrollArea):
     def __init__(self, parent=None, font_family="Monaco", font_size=14):
@@ -16,7 +16,7 @@ class TerminalWidget(QAbstractScrollArea):
         self.lines = []
         self.scroll_offset = 0
 
-        # ANSI 색상 캐싱
+        # ANSI color cache
         self.ansi_colors = {
             30: QColor(0, 0, 0), 31: QColor(205, 49, 49), 32: QColor(13, 188, 121),
             33: QColor(229, 229, 16), 34: QColor(36, 114, 200), 35: QColor(188, 63, 188),
@@ -37,15 +37,29 @@ class TerminalWidget(QAbstractScrollArea):
         self.setPalette(palette)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # 빠른 렌더링을 위한 QTimer 사용
+        # Fast rendering with QTimer
         self._update_pending = False
         self._update_timer = QTimer(self)
         self._update_timer.setInterval(16)  # 60fps
         self._update_timer.timeout.connect(self._do_update)
         self._update_timer.start()
 
+        # Block selection variables
+        self.selection_start = None  # (line, col)
+        self.selection_end = None    # (line, col)
+        self.is_selecting = False
+
+        # Cursor variables
+        self.cursor_line = 0
+        self.cursor_col = 0
+        self.cursor_visible = True
+        self._cursor_timer = QTimer(self)
+        self._cursor_timer.setInterval(500)  # 0.5s blink
+        self._cursor_timer.timeout.connect(self._toggle_cursor)
+        self._cursor_timer.start()
+
     def append_text(self, text):
-        """텍스트 추가 (최적화: paintEvent 직접 호출하지 않고, update 예약)"""
+        """Add text to terminal"""
         if not text:
             return
         text = text.replace('\r\n', '\n').replace('\r', '\n')
@@ -61,16 +75,13 @@ class TerminalWidget(QAbstractScrollArea):
                 else:
                     merged.append((part, color))
             self.lines[-1].extend(merged)
-        # if text.endswith('\n'):
-        #     self.lines.append([])
-        # scrollback limit (한 번에 삭제)
         if len(self.lines) > MAX_TERMINAL_LINES:
             del self.lines[:len(self.lines) - MAX_TERMINAL_LINES]
         self.scroll_offset = 0
         self._schedule_update()
+        self.set_cursor_to_end()
 
     def _schedule_update(self):
-        """update 예약 (중복 호출 방지)"""
         if not self._update_pending:
             self._update_pending = True
 
@@ -81,7 +92,7 @@ class TerminalWidget(QAbstractScrollArea):
             self._update_pending = False
 
     def parse_ansi_text(self, text):
-        """ANSI 시퀀스 파싱 (색상만)"""
+        """Parse ANSI color sequences (color only)"""
         result = []
         ansi_escape = re.compile(r'\x1B\[[0-9;]*m')
         current_color = self.current_color
@@ -107,7 +118,6 @@ class TerminalWidget(QAbstractScrollArea):
         return result
 
     def paintEvent(self, event):
-        """최적화된 paintEvent: 한 줄씩 drawText"""
         painter = QPainter(self.viewport())
         painter.setFont(self.font)
         painter.fillRect(self.viewport().rect(), QColor(30, 30, 30))
@@ -125,16 +135,40 @@ class TerminalWidget(QAbstractScrollArea):
             line_parts = self.lines[line_idx]
             x = 5 - h_scroll_offset
             y_line = y + self.font_metrics.ascent()
+            # Selection highlight
+            if self.selection_start and self.selection_end:
+                sel_start, sel_end = sorted([self.selection_start, self.selection_end])
+                if sel_start[0] <= line_idx <= sel_end[0]:
+                    sel_col_start = sel_start[1] if line_idx == sel_start[0] else 0
+                    sel_col_end = sel_end[1] if line_idx == sel_end[0] else self._line_length(line_parts)
+                    x1 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_start])
+                    x2 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_end])
+                    painter.fillRect(x1, y, x2 - x1, self.line_height, QColor(60, 120, 200, 120))
+            # Draw text
             for text_part, color in line_parts:
                 if text_part:
                     painter.setPen(color)
                     painter.drawText(x, y_line, text_part)
                     x += self.font_metrics.horizontalAdvance(text_part)
+            # Draw cursor
+            if (self.cursor_visible and 
+                line_idx == self.cursor_line and 
+                self.hasFocus()):
+                cursor_x = 5 - h_scroll_offset + self.font_metrics.horizontalAdvance(
+                    self._line_text(line_parts)[:self.cursor_col]
+                )
+                painter.setPen(QColor(200, 255, 200))
+                painter.drawRect(cursor_x, y, 2, self.line_height)
             y += self.line_height
         painter.end()
 
+    def _line_text(self, line_parts):
+        return ''.join(part for part, _ in line_parts)
+
+    def _line_length(self, line_parts):
+        return len(self._line_text(line_parts))
+
     def update_scrollbar(self):
-        """스크롤바 업데이트 (최적화)"""
         if self.line_height <= 0:
             self.line_height = 20
         viewport_height = self.viewport().height()
@@ -155,7 +189,7 @@ class TerminalWidget(QAbstractScrollArea):
             self.verticalScrollBar().setRange(0, 0)
             self.verticalScrollBar().setValue(0)
         self.verticalScrollBar().blockSignals(False)
-        # 가로 스크롤바
+        # Horizontal scrollbar
         max_line_width = 0
         for line_parts in self.lines:
             line_width = sum(self.font_metrics.horizontalAdvance(text_part) for text_part, _ in line_parts)
@@ -173,7 +207,6 @@ class TerminalWidget(QAbstractScrollArea):
         self.horizontalScrollBar().blockSignals(False)
 
     def wheelEvent(self, event):
-        """휠 이벤트"""
         delta = event.angleDelta().y()
         scroll_lines = 3
         
@@ -181,9 +214,9 @@ class TerminalWidget(QAbstractScrollArea):
         total_lines = len(self.lines)
         max_scroll = max(0, total_lines - visible_lines)
         
-        if delta > 0:  # 위로 스크롤
+        if delta > 0:
             self.scroll_offset = min(self.scroll_offset + scroll_lines, max_scroll)
-        else:  # 아래로 스크롤
+        else:
             self.scroll_offset = max(0, self.scroll_offset - scroll_lines)
         
         self.update_scrollbar()
@@ -191,78 +224,127 @@ class TerminalWidget(QAbstractScrollArea):
         event.accept()
 
     def scrollContentsBy(self, dx, dy):
-        """스크롤바 드래그 처리 - 가로/세로 모두 지원"""
-        if dy != 0:  # 세로 스크롤
+        if dy != 0:
             visible_lines = max(1, self.viewport().height() // self.line_height)
             total_lines = len(self.lines)
-            
             if total_lines > visible_lines:
                 scroll_value = self.verticalScrollBar().value()
                 max_scroll = total_lines - visible_lines
-                
-                # 스크롤 오프셋 계산
                 self.scroll_offset = max_scroll - scroll_value
-    
-        # 가로 스크롤은 자동으로 처리됨 (horizontalScrollBar().value() 사용)
-        
         self.viewport().update()
 
-    def keyPressEvent(self, event):
-        """키 이벤트 - 스크롤 관련만 처리"""
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            line, col = self._pos_to_linecol(event.pos())
+            self.selection_start = (line, col)
+            self.selection_end = (line, col)
+            self.is_selecting = True
+            self.viewport().update()
+
+    def mouseMoveEvent(self, event):
+        if self.is_selecting:
+            line, col = self._pos_to_linecol(event.pos())
+            self.selection_end = (line, col)
+            self.viewport().update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.is_selecting = False
+            self.viewport().update()
+
+    def _pos_to_linecol(self, pos):
+        y = pos.y() - 5
         visible_lines = max(1, self.viewport().height() // self.line_height)
         total_lines = len(self.lines)
-        max_scroll = max(0, total_lines - visible_lines)
-        
-        if event.key() == Qt.Key.Key_PageUp:
-            self.scroll_offset = min(self.scroll_offset + visible_lines, max_scroll)
-            self.update_scrollbar()
-            self.viewport().update()
-        elif event.key() == Qt.Key.Key_PageDown:
-            self.scroll_offset = max(0, self.scroll_offset - visible_lines)
-            self.update_scrollbar()
-            self.viewport().update()
-        elif event.key() == Qt.Key.Key_Home and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            self.scroll_offset = max_scroll
-            self.update_scrollbar()
-            self.viewport().update()
-        elif event.key() == Qt.Key.Key_End and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            self.scroll_offset = 0
-            self.update_scrollbar()
-            self.viewport().update()
+        start_line = max(0, total_lines - visible_lines - self.scroll_offset)
+        line = y // self.line_height + start_line
+        if line < 0:
+            line = 0
+        if line >= len(self.lines):
+            line = len(self.lines) - 1 if self.lines else 0
+        x = pos.x() - 5 + self.horizontalScrollBar().value()
+        text = self._line_text(self.lines[line]) if self.lines else ""
+        col = 0
+        acc = 0
+        for i, ch in enumerate(text):
+            w = self.font_metrics.horizontalAdvance(ch)
+            if acc + w // 2 >= x:
+                col = i
+                break
+            acc += w
         else:
-            super().keyPressEvent(event)
+            col = len(text)
+        return (line, col)
 
-    def handle_backspace(self):
-        """백스페이스 처리 - 개선된 버전"""
-        if self.current_input_buffer:
-            # 버퍼에서 마지막 문자 제거
-            deleted_char = self.current_input_buffer[-1]
-            self.current_input_buffer = self.current_input_buffer[:-1]
-            self.history_index = -1  # 편집 시 히스토리 인덱스 리셋
-            
-            # 화면에서 문자 지우기 - 더 명확한 백스페이스 시퀀스
-            self.terminal_widget.append_text('\b')  # 백스페이스만 전송
-            
-            self.show_current_input()
+    def copy_selection(self):
+        if not self.selection_start or not self.selection_end:
+            return
+        sel_start, sel_end = sorted([self.selection_start, self.selection_end])
+        lines = []
+        for i in range(sel_start[0], sel_end[0] + 1):
+            line = self._line_text(self.lines[i])
+            if i == sel_start[0] and i == sel_end[0]:
+                lines.append(line[sel_start[1]:sel_end[1]])
+            elif i == sel_start[0]:
+                lines.append(line[sel_start[1]:])
+            elif i == sel_end[0]:
+                lines.append(line[:sel_end[1]])
+            else:
+                lines.append(line)
+        text = '\n'.join(lines)
+        QGuiApplication.clipboard().setText(text)
 
     def remove_last_char(self):
-        """현재 줄에서 마지막 문자(글자) 하나를 지움"""
+        """Remove the last character from the last line"""
         if not self.lines:
             return
-        # 마지막 줄이 비어있지 않으면
         if self.lines[-1]:
             last_text, last_color = self.lines[-1][-1]
             if len(last_text) > 1:
-                # 여러 글자면 마지막 글자만 제거
                 self.lines[-1][-1] = (last_text[:-1], last_color)
             else:
-                # 한 글자면 해당 부분 삭제
                 self.lines[-1].pop()
-                # 줄이 완전히 비었고 첫 줄이 아니면 줄도 삭제
                 if not self.lines[-1] and len(self.lines) > 1:
                     self.lines.pop()
         else:
-            # 현재 줄이 비어있으면 이전 줄로 이동해서 삭제
             if len(self.lines) > 1:
                 self.lines.pop()
                 self.remove_last_char()
+        self._schedule_update()
+
+    def clear(self):
+        """Clear the terminal screen."""
+        self.lines.clear()
+        self.selection_start = None
+        self.selection_end = None
+        self.is_selecting = False
+        self.scroll_offset = 0
+        self._schedule_update()
+
+    def _toggle_cursor(self):
+        self.cursor_visible = not self.cursor_visible
+        self.viewport().update()
+
+    def set_font(self, font):
+        self.font = font
+        self.font_metrics = QFontMetrics(self.font)
+        self.line_height = self.font_metrics.height()
+        self.char_width = self.font_metrics.horizontalAdvance('M')
+        self.viewport().update()
+
+    def set_cursor(self, line, col):
+        self.cursor_line = line
+        self.cursor_col = col
+        self.cursor_visible = True
+        self.viewport().update()
+
+    def set_cursor_to_end(self):
+        """Move the cursor to the end of the last line."""
+        if not self.lines:
+            self.cursor_line = 0
+            self.cursor_col = 0
+        else:
+            self.cursor_line = len(self.lines) - 1
+            self.cursor_col = self._line_length(self.lines[-1])
+        self.cursor_visible = True
+        self.viewport().update()

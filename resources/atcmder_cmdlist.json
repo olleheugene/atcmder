@@ -1,7 +1,7 @@
 [
     {
         "index": 0,
-        "checked": true,
+        "checked": false,
         "title": {
             "text": "RADIO TEST COMMANDS",
             "disabled": true

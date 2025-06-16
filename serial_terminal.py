@@ -5,14 +5,11 @@ import threading
 import time
 import json
 import re
-import pyte
-import subprocess
 from PySide6.QtWidgets import (
-    QMainWindow, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QScrollArea
+    QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog
 )
-from PySide6.QtGui import QIcon, QFont, QTextCursor, QAction
+from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer
-from ansi2html import Ansi2HTMLConverter
 import utils
 from terminal_widget import TerminalWidget
 
@@ -22,7 +19,7 @@ def list_serial_ports():
 
 class SerialTerminal(QMainWindow):
     serial_data_signal = Signal(str)
-    sequential_complete_signal = Signal(bool, str)  # success flag, message
+    sequential_complete_signal = Signal(bool, str)
     reconnect_signal = Signal()
 
     def __init__(self, port=None, baudrate=115200):
@@ -30,34 +27,24 @@ class SerialTerminal(QMainWindow):
         utils.prepare_default_files()
         self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
         self.resize(1100, 600)
-        
-        # 먼저 serial 관련 변수들 초기화
         self.serial = None
         self.running = False
         self.thread = None
-        
-        # 히스토리 관련 변수 초기화
         self.command_history = []
         self.history_index = -1
         self.current_input_buffer = ""
-        self.input_prompt = ""  # 입력 프롬프트
-        self.input_line_started = False  # 현재 입력 라인이 시작되었는지 확인
-        
-        # 히스토리 로딩
         self.load_command_history()
-        
-        # 나머지 초기화...
         program_icon_path = utils.get_resources(utils.APP_ICON_NAME)
         if os.path.exists(program_icon_path):
             self.setWindowIcon(QIcon(program_icon_path))
         self.first_load = True
         self.data_buffer = ""
         self.buffer_timeout = None
-        self.ansi_buffer = ""  # Buffer for incomplete ANSI sequences
-        self.current_json_file = None  # Track currently loaded JSON file path
-        self.font_size = self.load_font_settings().get("size", 14)  # Load saved font size or use default
-        self.font_family = self.load_font_settings().get("family", "Monaco")  # Load saved font family or use default
-        self.auto_scroll_enabled = True  # Track if auto-scroll is enabled
+        self.ansi_buffer = ""
+        self.current_json_file = None
+        self.font_size = self.load_font_settings().get("size", 14)
+        self.font_family = self.load_font_settings().get("family", "Monaco")
+        self.auto_scroll_enabled = True
         self.comport_settings = []
         self.recent_ports = self.load_recent_ports()
         self.selected_port = port or ""
@@ -84,36 +71,25 @@ class SerialTerminal(QMainWindow):
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
-        
-        # View menu for font size adjustments
         view_menu = menubar.addMenu("View")
-        
         increase_font_action = QAction("Increase Font Size", self)
         increase_font_action.setShortcut("Ctrl++")
         increase_font_action.triggered.connect(self.increase_font_size)
         view_menu.addAction(increase_font_action)
-        
         decrease_font_action = QAction("Decrease Font Size", self)
         decrease_font_action.setShortcut("Ctrl+-")
         decrease_font_action.triggered.connect(self.decrease_font_size)
         view_menu.addAction(decrease_font_action)
-        
         reset_font_action = QAction("Reset Font Size", self)
         reset_font_action.setShortcut("Ctrl+0")
         reset_font_action.triggered.connect(self.reset_font_size)
         view_menu.addAction(reset_font_action)
-        
         view_menu.addSeparator()
-
         self.reconnect_signal.connect(self.try_reconnect_serial)
-        
-        # Add current font size display
         self.font_size_action = QAction(f"Current Font Size: {self.font_size}", self)
-        self.font_size_action.setEnabled(False)  # Make it non-clickable, just for display
+        self.font_size_action.setEnabled(False)
         view_menu.addAction(self.font_size_action)
-        
         view_menu.addSeparator()
-        
         theme_menu = menubar.addMenu("Theme")
         light_action = QAction("Light", self)
         dark_action = QAction("Dark", self)
@@ -124,11 +100,8 @@ class SerialTerminal(QMainWindow):
         theme_menu.addAction(light_action)
         theme_menu.addAction(dark_action)
         theme_menu.addAction(default_action)
-
         self.apply_theme(self.load_theme_settings())
 
-        self.screen = pyte.Screen(120, 40)
-        self.stream = pyte.Stream(self.screen)
         self.left_widget = QWidget()
         self.left_layout = QVBoxLayout()
         serial_group = QGroupBox("Serial Settings")
@@ -170,13 +143,9 @@ class SerialTerminal(QMainWindow):
             row_layout = QHBoxLayout()
             checkbox = QCheckBox()
             lineedit = QLineEdit()
-            # lineedit.setAlignment(Qt.AlignCenter) 
             send_btn = QPushButton("Send")
-            
-            # Create a proper closure for the button click
             def make_send_handler(index):
                 return lambda: self.send_lineedit_command(index)
-            
             send_btn.clicked.connect(make_send_handler(i))
             checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit_to_json())
             lineedit.textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit_to_json())
@@ -191,19 +160,14 @@ class SerialTerminal(QMainWindow):
             self.sendline_btns.append(send_btn)
         self.left_layout.addStretch()
         self.left_widget.setLayout(self.left_layout)
-        
-        # TerminalWidget 생성
         self.terminal_widget = TerminalWidget(font_family=self.font_family, font_size=self.font_size)
         self.terminal_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.terminal_widget.installEventFilter(self)
-
-        
         self.clear_btn = QPushButton()
         self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
         self.clear_btn.setFixedSize(24, 24)
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
-        
         textedit_layout = QVBoxLayout()
         textedit_layout.setContentsMargins(0, 0, 8, 12)
         btn_h_layout = QHBoxLayout()
@@ -213,7 +177,7 @@ class SerialTerminal(QMainWindow):
         btn_v_layout.addSpacing(10)
         btn_v_layout.addLayout(btn_h_layout)
         textedit_layout.addLayout(btn_v_layout)
-        textedit_layout.addWidget(self.terminal_widget)  # terminal_widget 대신 scroll_area
+        textedit_layout.addWidget(self.terminal_widget)
         right_widget = QWidget()
         right_widget.setLayout(textedit_layout)
         self.toggle_btn = QPushButton()
@@ -242,12 +206,8 @@ class SerialTerminal(QMainWindow):
         self.setCentralWidget(central)
         self.splitter = splitter
         self.left_panel_visible = True
-        self.serial = None
-        self.running = False
-        self.thread = None
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
-        self.ansi_conv = Ansi2HTMLConverter(inline=True, scheme='xterm')
         # Set default JSON file as current
         self.current_json_file = utils.USER_COMMAND_LIST
         self.load_checkbox_lineedit_from_json(self.current_json_file)
@@ -256,36 +216,23 @@ class SerialTerminal(QMainWindow):
         self.left_layout.addWidget(self.sequential_btn)
         self.refresh_serial_ports(auto_connect=True)
         self.terminal_widget.setFocus()
-        
-        # Try to auto-load last used JSON file
         self.auto_load_selected_commandlist_file()
-        
-        # Show current JSON file status
         self.update_json_file_status()
         self.last_ports = set(list_serial_ports())
-
-        # 테스트 출력
-        QTimer.singleShot(1000, lambda: self.terminal_widget.append_text("Terminal initialized successfully!\n"))
-        QTimer.singleShot(2000, lambda: self.terminal_widget.append_text("Ready for serial data...\n"))
-
-        # 예시: 시리얼 읽기 스레드에서
         self._display_buffer = ""
-
-        # # QTimer로 주기적으로 화면에 출력
-        # self.setup_display_flush_timer()
 
     def eventFilter(self, obj, event):
         key = None
         text = ""
         if obj is self.terminal_widget:
             if event.type() == QEvent.Type.Resize:
-                return False  # 크기 조절은 Qt가 처리하게 둔다
+                return False  # Let Qt handle resizing
             if event.type() == QEvent.Type.KeyPress:
                 key = event.key()
                 text = event.text()
                 modifiers = event.modifiers()
-        
-                # 폰트 크기 조절
+
+                # Font size adjustment
                 if modifiers == Qt.KeyboardModifier.ControlModifier:
                     if key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
                         self.increase_font_size()
@@ -296,45 +243,44 @@ class SerialTerminal(QMainWindow):
                     elif key == Qt.Key.Key_0:
                         self.reset_font_size()
                         return True
-                    # Ctrl+C 처리
+                    # Ctrl+C
                     elif key == Qt.Key.Key_C:
                         self.handle_ctrl_c()
                         return True
+                    # Ctrl+V
+                    elif key == Qt.Key.Key_V:
+                        self.handle_paste()
+                        return True
         
-            # 시리얼 연결 확인
             if not (self.serial and self.serial.is_open):
                 return True
             
-            # 입력 라인이 시작되지 않았으면 프롬프트 표시
-            if not self.input_line_started:
-                self.start_input_line()
-            
-            # 방향키 (위) - 명령 히스토리 (이전 명령)
+            # Arrow Up - Command history (previous command)
             if key == Qt.Key.Key_Up:
                 self.handle_history_up()
                 return True
             
-            # 방향키 (아래) - 명령 히스토리 (다음 명령)
+            # Arrow Down - Command history (next command)
             elif key == Qt.Key.Key_Down:
                 self.handle_history_down()
                 return True
             
-            # 일반 문자 입력
+            # Printable character input
             elif text and text.isprintable() and not (modifiers & Qt.KeyboardModifier.ControlModifier):
                 self.handle_character_input(text)
                 return True
             
-            # Enter 키
+            # Enter key
             elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
                 self.handle_enter()
                 return True
             
-            # 백스페이스
+            # Backspace key
             elif key == Qt.Key.Key_Backspace:
                 self.handle_backspace()
                 return True
             
-            # Tab 키 (자동완성 등에 사용 가능)
+            # Tab key (for autocomplete, etc.)
             elif key == Qt.Key.Key_Tab:
                 self.handle_tab()
                 return True
@@ -344,138 +290,167 @@ class SerialTerminal(QMainWindow):
         return super().eventFilter(obj, event)
 
     def handle_character_input(self, char):
-        """문자 입력 처리"""
+        """Handle character input"""
         self.current_input_buffer += char
-        self.history_index = -1  # 새로운 입력 시 히스토리 인덱스 리셋
+        self.history_index = -1  # Reset history index on new input
         
-        # 화면에 입력한 문자 즉시 표시
+        # Display the input character immediately
         self.terminal_widget.append_text(char)
         self.show_current_input()
 
     def handle_backspace(self):
-        """백스페이스 처리"""
+        """Handle backspace key"""
         if self.current_input_buffer:
-            # 버퍼에서 마지막 문자 제거
-            deleted_char = self.current_input_buffer[-1]
+            # Remove last character from buffer
             self.current_input_buffer = self.current_input_buffer[:-1]
             self.history_index = -1
-            
-            # 화면에서 백스페이스 처리
-            self.terminal_widget.append_text('\b')
-            
+            # Remove last character from terminal display
+            self.terminal_widget.remove_last_char()
             self.show_current_input()
 
     def handle_enter(self):
-        """Enter 키 처리"""
-        # 화면에 줄바꿈 표시
+        """Enter Key"""
         self.terminal_widget.append_text("\n")
-        self.input_line_started = False  # 입력 라인 종료
-        
+
         if self.current_input_buffer:
-            command_to_send = self.current_input_buffer + "\r\n"
+            command_to_send = self.current_input_buffer.rstrip() + "\r\n"
             self.serial.write(command_to_send.encode('utf-8', errors='replace'))
             
-            # 히스토리에 추가 (중복 제거)
+            # Add to command history
             if self.current_input_buffer in self.command_history:
                 self.command_history.remove(self.current_input_buffer)
             self.command_history.insert(0, self.current_input_buffer)
-            
-            # 히스토리 크기 제한
+
+            # Limit history size
             max_history = self.load_history_settings().get("max_count", 50)
             if len(self.command_history) > max_history:
                 self.command_history = self.command_history[:max_history]
-            
-            # 버퍼 및 인덱스 초기화
+
+            # Clear buffer and reset index
             self.current_input_buffer = ""
             self.history_index = -1
         else:
-            # 빈 Enter
+            # Empty Enter
             self.serial.write(b"\r\n")
         
         self.show_current_input()
 
     def handle_history_up(self):
-        """히스토리 위로 이동"""
+        """Move up in command history"""
         if self.command_history and self.history_index < len(self.command_history) - 1:
-            # 현재 입력 완전히 지우기
             self.clear_current_input_completely()
-            
             self.history_index += 1
             self.current_input_buffer = self.command_history[self.history_index]
-            
-            # 새로운 히스토리 명령 표시
             self.terminal_widget.append_text(self.current_input_buffer)
-            self.show_current_input()
+            self.terminal_widget.set_cursor_to_end()
 
     def handle_history_down(self):
-        """히스토리 아래로 이동"""
-        # 현재 입력 완전히 지우기
+        """Move down in command history"""
         self.clear_current_input_completely()
-        
         if self.history_index > 0:
             self.history_index -= 1
             self.current_input_buffer = self.command_history[self.history_index]
-
+            self.terminal_widget.append_text(self.current_input_buffer)
         elif self.history_index == 0:
             self.history_index = -1
             self.current_input_buffer = ""
-        
-        # 새로운 입력 표시
-        if self.current_input_buffer:
-            self.terminal_widget.append_text(self.current_input_buffer)
-        
-        self.show_current_input()
+        self.terminal_widget.set_cursor_to_end()
 
     def handle_ctrl_c(self):
-        """Ctrl+C 처리"""
-        # 현재 입력 완전히 지우고 새 줄 시작
-        self.clear_current_input_completely()
-        self.current_input_buffer = ""
-        self.history_index = -1
-        self.terminal_widget.append_text("^C\n")
-        self.input_line_started = False
-        
-        # Ctrl+C 신호를 시리얼로 전송
-        if self.serial and self.serial.is_open:
-            self.serial.write(b'\x03')
+        """Ctrl+C: Copy selected block"""
+        self.terminal_widget.copy_selection()
+
+    def handle_paste(self):
+        """Paste: Add clipboard text to input buffer and terminal"""
+        clipboard = QGuiApplication.clipboard()
+        text = clipboard.text()
+        if text:
+            # Support multi-line paste
+            for line in text.splitlines(True):  # Keep line breaks
+                self.current_input_buffer += line.rstrip('\r\n')
+                self.terminal_widget.append_text(line)
+            self.show_current_input()
 
     def handle_tab(self):
-        """Tab 키 입력 처리"""
-        self.serial.write(b'\t')
-        self.current_input_buffer += '\t'
-        self.terminal_widget.append_text('\t')  # 탭 입력 즉시 화면에 반영
-        self.show_current_input()
+        """Tab key: Send input buffer + tab to serial, use response for autocomplete"""
+        if not (self.serial and self.serial.is_open):
+            return
 
-    def start_input_line(self):
-        """새로운 입력 라인 시작"""
-        if not self.input_line_started:
-            self.terminal_widget.append_text(self.input_prompt)
-            self.input_line_started = True
+        # Send input buffer + tab character
+        tab_command = self.current_input_buffer + '\t'
+        try:
+            self.serial.write(tab_command.encode('utf-8', errors='replace'))
+        except Exception as e:
+            self.update_status_bar(f"Tab send error: {e}")
+            return
+
+        self.waiting_for_autocomplete = True  # Wait for autocomplete response
+        self.terminal_widget.set_cursor_to_end()
+        self.clear_current_input_completely()  # Clear current input line
+        self.show_current_input()
+        self.current_input_buffer = ""  # Reset input buffer
+
+    def remove_last_char(self):
+        if not self.lines:
+            return
+        if self.lines[-1]:
+            last_text, last_color = self.lines[-1][-1]
+            if len(last_text) > 1:
+                self.lines[-1][-1] = (last_text[:-1], last_color)
+            else:
+                self.lines[-1].pop()
+                if not self.lines[-1] and len(self.lines) > 1:
+                    self.lines.pop()
+        else:
+            if len(self.lines) > 1:
+                self.lines.pop()
+                self.remove_last_char()
+        self._schedule_update()
 
     def clear_current_input_completely(self):
-        """현재 입력 내용을 화면에서 완전히 지우기"""
-        if self.current_input_buffer:
-            # 현재 입력한 문자 수만큼 백스페이스로 지우기
-            for _ in range(len(self.current_input_buffer)):
-                self.terminal_widget.append_text('\b \b')
+        """Completely clear the current input line from the terminal (actually delete)"""
+        if not self.terminal_widget.lines:
+            self.current_input_buffer = ""
+            return
+
+        # Remove as many characters as the input buffer length from the last line
+        total_len = len(self.current_input_buffer)
+        if total_len > 0:
+            line_parts = self.terminal_widget.lines[-1]
+            line_text = self.terminal_widget._line_text(line_parts)
+            # If the last line ends with the input buffer, remove that part
+            if len(line_text) >= total_len:
+                new_text = line_text[:-total_len]
+                # Ignore color info, make a single line
+                self.terminal_widget.lines[-1] = [(new_text, self.terminal_widget.default_color)] if new_text else []
+            else:
+                # If the whole line is shorter than the input, just clear it
+                self.terminal_widget.lines[-1] = []
+            self.terminal_widget._schedule_update()
+        self.current_input_buffer = ""
 
     def clear_current_input(self):
-        """현재 입력 내용을 화면에서 지우기 (기존 메서드 유지)"""
+        """Clear current input (legacy method)"""
         self.clear_current_input_completely()
 
     def show_current_input(self):
-        """현재 입력 상태를 상태바에 표시"""
+        """Show current input state in the status bar"""
         if hasattr(self, 'status'):
             if self.current_input_buffer:
                 history_info = ""
                 if self.command_history and self.history_index >= 0:
                     history_info = f" (History: {self.history_index + 1}/{len(self.command_history)})"
-                self.status.showMessage(f"Input: {self.current_input_buffer}{history_info}")
-            else:
-                if self.serial and self.serial.is_open:
-                    self.status.showMessage("Connected - Ready for input")
-                else:
-                    self.status.showMessage("Disconnected")
+                # self.status.showMessage(f"Input: {self.current_input_buffer}{history_info}")
+            # else:
+            #     if self.serial and self.serial.is_open:
+            #         self.status.showMessage("Connected - Ready for input")
+            #     else:
+            #         self.status.showMessage("Disconnected")
+        # Update cursor position
+        if self.terminal_widget.lines:
+            line = len(self.terminal_widget.lines) - 1
+            col = self.terminal_widget._line_length(self.terminal_widget.lines[-1])
+            self.terminal_widget.set_cursor(line, col)
 
     def update_terminal(self, data):
         """Update terminal output"""
@@ -484,30 +459,32 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.append_text(data)
         self.terminal_widget.update()  # or repaint() if needed
 
+        # If autocomplete result arrived, update input buffer
+        # Example: last input was tab, serial response is a single line (command)
+        if hasattr(self, "waiting_for_autocomplete") and self.waiting_for_autocomplete:
+            # Assume autocomplete result is a single line (with line break)
+            lines = data.splitlines()
+            if lines:
+                self.show_current_input()
+            self.waiting_for_autocomplete = False
+
     def clear_terminal(self):
-        """터미널 클리어"""
+        """Clear terminal"""
         self.terminal_widget.clear()
 
     def setup_terminal_font(self):
-        """터미널 폰트 설정"""
+        """Terminal Font Settings"""
         fixed_font = QFont(self.load_font_settings().get("name", "Monaco"))
         fixed_font.setStyleHint(QFont.StyleHint.Monospace)
         fixed_font.setPointSize(self.font_size)
         self.terminal_widget.set_font(fixed_font)
-        
-        # QTextEdit 전용 메서드들 제거
-        # cursor = self.terminal_widget.textCursor()  # 삭제
-        # cursor.movePosition(QTextCursor.End)        # 삭제
-        # self.terminal_widget.setTextCursor(cursor)  # 삭제
-        # self.terminal_widget.ensureCursorVisible()  # 삭제
     
         # Update the menu text to show current font size
         if hasattr(self, 'font_size_action'):
             self.font_size_action.setText(f"Current Font Size: {self.font_size}")
 
     def check_scroll_position(self):
-        """스크롤 위치 확인 (TerminalWidget은 자동으로 처리)"""
-        # TerminalWidget에서 자동으로 스크롤 관리하므로 빈 함수로 유지
+        """Check scroll position (TerminalWidget handles this automatically)"""
         pass
 
     def save_recent_ports(self):
@@ -519,7 +496,7 @@ class SerialTerminal(QMainWindow):
             pass
 
     def closeEvent(self, event):
-        """애플리케이션 종료 시 히스토리 저장"""
+        """Save history on application exit"""
         self.save_history_settings()
         if self.serial and self.serial.is_open:
             self.serial.close()
@@ -584,7 +561,7 @@ class SerialTerminal(QMainWindow):
                 # self.update_status_bar(f"Using custom command list: {filename}")
                 self.setWindowTitle("AT Commander v" + utils.APP_VERSION + f" - {filename}")
         else:
-            self.update_status_bar("No command list loaded")
+            # self.update_status_bar("No command list loaded")
             self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
 
     def show_about_dialog(self):
@@ -1059,7 +1036,7 @@ class SerialTerminal(QMainWindow):
                             self.ansi_buffer = lines[i]
                         buffer_start_time = time.time()
 
-                    # 한번에 여러 줄 emit (속도 개선)
+                    # Emit multiple lines at once (performance improvement)
                     if emit_batch:
                         for chunk in emit_batch:
                             self.serial_data_signal.emit(chunk)
@@ -1071,7 +1048,7 @@ class SerialTerminal(QMainWindow):
                             self.serial_data_signal.emit(self.ansi_buffer)
                             self.ansi_buffer = ""
                             buffer_start_time = None
-                time.sleep(0.001)  # 더 짧게 (CPU 여유 있으면)
+                time.sleep(0.001)  # Shorter sleep (if CPU is idle)
             except serial.SerialException:
                 self.running = False
                 QTimer.singleShot(0, lambda: self.update_status_bar("Port error. Disconnected."))
@@ -1143,11 +1120,11 @@ class SerialTerminal(QMainWindow):
                                 command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
                                 bytes_written = self.serial.write(command_bytes)
                                 
-                                # Update status bar with success message including time interval
-                                def update_status(cmd, num, total, interval):
-                                    self.update_status_bar(f"Sequential Send [{num}/{total}]: {cmd} (delay: {interval}s)")
+                                # # Update status bar with success message including time interval
+                                # def update_status(cmd, num, total, interval):
+                                #     self.update_status_bar(f"Sequential Send [{num}/{total}]: {cmd} (delay: {interval}s)")
                                 
-                                QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval: update_status(cmd, num, total, interval))
+                                # QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval: update_status(cmd, num, total, interval))
                                 
                                 # Display sent command in terminal for verification
                                 self.serial_data_signal.emit(f"{command}\r\n")
@@ -1162,10 +1139,10 @@ class SerialTerminal(QMainWindow):
                                 time.sleep(time_interval)
                                 
                             except Exception as e:
-                                def update_error(err):
-                                    self.update_status_bar(f"Sequential send error: {err}")
+                                # def update_error(err):
+                                #     self.update_status_bar(f"Sequential send error: {err}")
                                     
-                                QTimer.singleShot(0, lambda err=str(e): update_error(err))
+                                # QTimer.singleShot(0, lambda err=str(e): update_error(err))
                                 success = False
                                 error_msg = str(e)
                                 break
@@ -1192,43 +1169,78 @@ class SerialTerminal(QMainWindow):
         """Handle sequential send completion in the main thread"""
         self.sequential_btn.setEnabled(True)
         self.sequential_btn.setText("Sequential Send")
-        self.update_status_bar(message)
+        # self.update_status_bar(message)
 
     def load_history_settings(self):
         """히스토리 설정 로딩"""
         try:
-            history_file = os.path.join(utils.get_app_data_folder(), "history_settings.json")
-            if os.path.exists(history_file):
-                with open(history_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            else:
-                # 기본 설정
-                default_settings = {"max_count": 50, "save_on_exit": True}
-                return default_settings
+            if os.path.exists(utils.USER_SETTINGS):
+                try:
+                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                        user_settings_file = json.load(f)
+                        # Find selected_commandlist_file in the list
+                        for item in user_settings_file:
+                            if isinstance(item, dict) and "history_settings" in item:
+                                return item["history_settings"]
+                    if not isinstance(item, dict):
+                        history_file = {"max_count": 50, "save_on_exit": True, "history": []}
+                    return history_file
+                except Exception:
+                    history_file = {"max_count": 50, "save_on_exit": True, "history": []}
+                    return history_file
         except Exception as e:
             print(f"Error loading history settings: {e}")
             return {"max_count": 50, "save_on_exit": True}
 
     def save_history_settings(self):
-        """히스토리 설정 저장"""
+        """Store history settings"""
         try:
-            settings = {
+            history_settings = {
                 "max_count": 50,
                 "save_on_exit": True,
-                "history": self.command_history[:50]  # 최근 50개만 저장
+                "history": self.command_history[:50]
             }
+            # Load existing settings first
+            settings = []
+            if os.path.exists(utils.USER_SETTINGS):
+                try:
+                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                        settings = json.load(f)
+                    if not isinstance(settings, list):
+                        settings = []
+                except Exception:
+                    settings = []
             
-            history_file = os.path.join(utils.get_app_data_folder(), "history_settings.json")
-            with open(history_file, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, indent=2, ensure_ascii=False)
+            # Find existing font object and update it
+            for item in settings:
+                if isinstance(item, dict) and "history_settings" in item:
+                    # Update only the size, keep other font properties
+                    item["history_settings"] = history_settings
+                    item_found = True
+                    break
             
+            # If no font object found, add new one
+            if not item_found:
+                history_obj = {
+                    "history_settings": {
+                    "max_count": 50,
+                    "save_on_exit": True,
+                    "history": []
+                    },
+                }
+                settings.append(history_obj)
+            
+            # Save back to file
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"Error saving history: {e}")
+            print(f"Warning: Could not save theme settings: {e}")
 
     def load_command_history(self):
         """명령 히스토리 로딩"""
         try:
             settings = self.load_history_settings()
+            # self.command_history = settings.get("history_settings", [])
             self.command_history = settings.get("history", [])
         except Exception as e:
             print(f"Error loading command history: {e}")
@@ -1353,12 +1365,6 @@ class SerialTerminal(QMainWindow):
         fixed_font.setPointSize(self.font_size)
         self.terminal_widget.set_font(fixed_font)
         
-        # QTextEdit 전용 메서드들 제거
-        # cursor = self.terminal_widget.textCursor()  # 삭제
-        # cursor.movePosition(QTextCursor.End)        # 삭제
-        # self.terminal_widget.setTextCursor(cursor)  # 삭제
-        # self.terminal_widget.ensureCursorVisible()  # 삭제
-    
         # Update the menu text to show current font size
         if hasattr(self, 'font_size_action'):
             self.font_size_action.setText(f"Current Font Size: {self.font_size}")
@@ -1387,8 +1393,8 @@ class SerialTerminal(QMainWindow):
         self.update_status_bar(f"Font size reset to: {self.font_size}")
     
     def check_scroll_position(self):
-        """스크롤 위치 확인 (TerminalWidget은 자동으로 처리)"""
-        # TerminalWidget에서 자동으로 스크롤 관리하므로 빈 함수로 유지
+        """Check scroll position (TerminalWidget handles automatically)"""
+        # This function is intentionally left blank as TerminalWidget manages scrolling automatically
         pass
 
     def try_reconnect_serial(self):
