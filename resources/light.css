@@ -8,6 +8,13 @@ Available at: https://github.com/GTRONICK/QSS/blob/master/Ubuntu.qss
 QMainWindow {
 	background-color:#f0f0f0;
 }
+
+QGroupBox::title {
+	padding: 2px 2px;
+	background-color: transparent;
+	color: rgb(90, 90, 90);
+}
+
 QCheckBox {
 	padding:2px;
 }
@@ -487,7 +494,7 @@ QTextEdit {
 	border-width: 1px;
 	border-style: solid;
 	border-color:transparent;
-	color:rgb(17,17,17);
+	color:rgb(255, 254, 254);
 	selection-background-color:rgb(236,116,64);
 }
 QTimeEdit, QToolBox, QToolBox::tab, QToolBox::tab:selected {
