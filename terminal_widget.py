@@ -58,6 +58,9 @@ class TerminalWidget(QAbstractScrollArea):
         self._cursor_timer.timeout.connect(self._toggle_cursor)
         self._cursor_timer.start()
 
+        self.verticalScrollBar().setRange(0, 1)
+        self.horizontalScrollBar().setRange(0, 1)
+
     def append_text(self, text):
         """Add text to terminal, handle ANSI clear screen and cursor home"""
         if not text:
@@ -133,20 +136,33 @@ class TerminalWidget(QAbstractScrollArea):
         painter = QPainter(self.viewport())
         painter.setFont(self.font)
         painter.fillRect(self.viewport().rect(), QColor(30, 30, 30))
+        
         if not self.lines:
             painter.end()
             return
+        
         viewport_rect = self.viewport().rect()
-        visible_lines = max(1, viewport_rect.height() // self.line_height)
+        
+        effective_width = viewport_rect.width()
+        if self.verticalScrollBar().isVisible():
+            effective_width -= self.verticalScrollBar().width()
+        
+        effective_height = viewport_rect.height()
+        if self.horizontalScrollBar().isVisible():
+            effective_height -= self.horizontalScrollBar().height()
+        
+        visible_lines = max(1, effective_height // self.line_height)
         h_scroll_offset = self.horizontalScrollBar().value()
         total_lines = len(self.lines)
         start_line = max(0, total_lines - visible_lines - self.scroll_offset)
         end_line = min(total_lines, start_line + visible_lines)
+        
         y = 5
         for line_idx in range(start_line, end_line):
             line_parts = self.lines[line_idx]
             x = 5 - h_scroll_offset
             y_line = y + self.font_metrics.ascent()
+            
             # Selection highlight
             if self.selection_start and self.selection_end:
                 sel_start, sel_end = sorted([self.selection_start, self.selection_end])
@@ -155,23 +171,46 @@ class TerminalWidget(QAbstractScrollArea):
                     sel_col_end = sel_end[1] if line_idx == sel_end[0] else self._line_length(line_parts)
                     x1 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_start])
                     x2 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_end])
+                    x2 = min(x2, effective_width - 5)
                     painter.fillRect(x1, y, x2 - x1, self.line_height, QColor(60, 120, 200, 120))
-            # Draw text
+            
             for text_part, color in line_parts:
-                if text_part:
+                if text_part and x < effective_width - 5:
                     painter.setPen(color)
-                    painter.drawText(x, y_line, text_part)
-                    x += self.font_metrics.horizontalAdvance(text_part)
-            # Draw cursor
+                    text_width = self.font_metrics.horizontalAdvance(text_part)
+                    if x + text_width > effective_width - 5:
+                        available_width = effective_width - 5 - x
+                        if available_width > 0:
+                            truncated_text = ""
+                            current_width = 0
+                            for char in text_part:
+                                char_width = self.font_metrics.horizontalAdvance(char)
+                                if current_width + char_width > available_width:
+                                    break
+                                truncated_text += char
+                                current_width += char_width
+                            if truncated_text:
+                                painter.drawText(x, y_line, truncated_text)
+                        break
+                    else:
+                        painter.drawText(x, y_line, text_part)
+                        x += text_width
+            
             if (self.cursor_visible and 
                 line_idx == self.cursor_line and 
                 self.hasFocus()):
                 cursor_x = 5 - h_scroll_offset + self.font_metrics.horizontalAdvance(
                     self._line_text(line_parts)[:self.cursor_col]
                 )
-                painter.setPen(QColor(200, 255, 200))
-                painter.drawRect(cursor_x, y, 2, self.line_height)
+
+                if cursor_x < effective_width - 5:
+                    painter.setPen(QColor(200, 255, 200))
+                    painter.drawRect(cursor_x, y, 2, self.line_height)
+            
             y += self.line_height
+            if y > effective_height:
+                break
+        
         painter.end()
 
     def _line_text(self, line_parts):
@@ -181,14 +220,35 @@ class TerminalWidget(QAbstractScrollArea):
         return len(self._line_text(line_parts))
 
     def update_scrollbar(self):
+        if hasattr(self, 'font'):
+            self.font_metrics = QFontMetrics(self.font)
+            self.line_height = self.font_metrics.height()
+            self.char_width = self.font_metrics.horizontalAdvance('M')
+        
         if self.line_height <= 0:
             self.line_height = 20
+        if self.char_width <= 0:
+            self.char_width = 10
+        
         viewport_height = self.viewport().height()
         viewport_width = self.viewport().width()
+        
         if viewport_height <= 0 or viewport_width <= 0:
             return
-        visible_lines = max(1, viewport_height // self.line_height)
+        
+        effective_height = viewport_height
+        effective_width = viewport_width
+        
+        if self.horizontalScrollBar().isVisible():
+            effective_height -= self.horizontalScrollBar().height()
+        
+        if self.verticalScrollBar().isVisible():
+            effective_width -= self.verticalScrollBar().width()
+        
+        visible_lines = max(1, effective_height // self.line_height)
         total_lines = len(self.lines)
+        
+        # Vertical Scrollbar 업데이트
         self.verticalScrollBar().blockSignals(True)
         if total_lines > visible_lines:
             max_scroll = total_lines - visible_lines
@@ -198,23 +258,30 @@ class TerminalWidget(QAbstractScrollArea):
             scroll_value = max_scroll - self.scroll_offset
             self.verticalScrollBar().setValue(scroll_value)
         else:
-            self.verticalScrollBar().setRange(0, 0)
+            # 스크롤바를 항상 표시하기 위해 최소 범위 설정
+            self.verticalScrollBar().setRange(0, 1)
             self.verticalScrollBar().setValue(0)
+            if self.scroll_offset != 0:
+                self.scroll_offset = 0
         self.verticalScrollBar().blockSignals(False)
-        # Horizontal scrollbar
+        
+        # Horizontal Scrollbar 업데이트
         max_line_width = 0
-        for line_parts in self.lines:
-            line_width = sum(self.font_metrics.horizontalAdvance(text_part) for text_part, _ in line_parts)
-            max_line_width = max(max_line_width, line_width)
-        content_width = max_line_width + 20
+        if self.lines:
+            for line_parts in self.lines:
+                line_width = sum(self.font_metrics.horizontalAdvance(text_part) for text_part, _ in line_parts)
+                max_line_width = max(max_line_width, line_width)
+        
+        content_width = max_line_width + (self.char_width * 2) + 10
+        
         self.horizontalScrollBar().blockSignals(True)
-        if content_width > viewport_width:
-            max_h_scroll = content_width - viewport_width
+        if content_width > effective_width:
+            max_h_scroll = content_width - effective_width
             self.horizontalScrollBar().setRange(0, max_h_scroll)
-            self.horizontalScrollBar().setPageStep(viewport_width)
-            self.horizontalScrollBar().setSingleStep(20)
+            self.horizontalScrollBar().setPageStep(int(effective_width * 0.8))
+            self.horizontalScrollBar().setSingleStep(self.char_width)
         else:
-            self.horizontalScrollBar().setRange(0, 0)
+            self.horizontalScrollBar().setRange(0, 1)
             self.horizontalScrollBar().setValue(0)
         self.horizontalScrollBar().blockSignals(False)
 
@@ -265,19 +332,27 @@ class TerminalWidget(QAbstractScrollArea):
             self.viewport().update()
 
     def _pos_to_linecol(self, pos):
+        # 스크롤바 두께를 고려한 위치 계산
+        effective_height = self.viewport().height()
+        if self.horizontalScrollBar().isVisible():
+            effective_height -= self.horizontalScrollBar().height()
+        
         y = pos.y() - 5
-        visible_lines = max(1, self.viewport().height() // self.line_height)
+        visible_lines = max(1, effective_height // self.line_height)
         total_lines = len(self.lines)
         start_line = max(0, total_lines - visible_lines - self.scroll_offset)
         line = y // self.line_height + start_line
+        
         if line < 0:
             line = 0
         if line >= len(self.lines):
             line = len(self.lines) - 1 if self.lines else 0
+        
         x = pos.x() - 5 + self.horizontalScrollBar().value()
         text = self._line_text(self.lines[line]) if self.lines else ""
         col = 0
         acc = 0
+        
         for i, ch in enumerate(text):
             w = self.font_metrics.horizontalAdvance(ch)
             if acc + w // 2 >= x:
@@ -286,6 +361,7 @@ class TerminalWidget(QAbstractScrollArea):
             acc += w
         else:
             col = len(text)
+        
         return (line, col)
 
     def copy_selection(self):
