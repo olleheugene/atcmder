@@ -21,7 +21,7 @@ def get_resources(resource_file):
     return path
 
 binaries = []
-hiddenimports = ['serial_terminal', 'utils', 'ansi2html', 'pyte']
+hiddenimports = ['serial_terminal', 'utils']
 tmp_ret = collect_all('serial')
 binaries += tmp_ret[1]
 hiddenimports += tmp_ret[2]
