@@ -59,9 +59,21 @@ class TerminalWidget(QAbstractScrollArea):
         self._cursor_timer.start()
 
     def append_text(self, text):
-        """Add text to terminal"""
+        """Add text to terminal, handle ANSI clear screen and cursor home"""
         if not text:
             return
+
+        # Handle ANSI cursor home (ESC[H])
+        cursor_home_pattern = re.compile(r'\x1B\[H')
+        if cursor_home_pattern.search(text):
+            # Move cursor to the top-left (0, 0)
+            self.cursor_line = 0
+            self.cursor_col = 0
+            self.cursor_visible = True
+            self.clear()
+            self.viewport().update()
+            text = text.replace('\x1b[H', '\n')
+
         text = text.replace('\r\n', '\n').replace('\r', '\n')
         lines = text.split('\n')
         for i, line in enumerate(lines):
