@@ -56,7 +56,7 @@ class SerialTerminal(QMainWindow):
         self.baudrate = baudrate
         self.status = self.statusBar()
         self.update_status_bar("Disconnected")
-        self.author_label = QLabel("By OllehEugene with AI")
+        self.author_label = QLabel("By OllehEugene")
         self.author_label.setStyleSheet("color: #888; margin-left: 12px;")
         self.status.addPermanentWidget(self.author_label)
 
@@ -584,7 +584,7 @@ class SerialTerminal(QMainWindow):
             self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
 
     def show_about_dialog(self):
-        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + utils.APP_VERSION + "\n\nBy OllehEugene with AI")
+        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + utils.APP_VERSION + "\n\nBy OllehEugene")
 
     def save_selected_json_filepath(self, file_path):
         """Save the last loaded JSON file path to settings"""
@@ -603,15 +603,15 @@ class SerialTerminal(QMainWindow):
             # Find existing selected_commandlist_file object and update it
             json_file_found = False
             for item in settings:
-                if isinstance(item, dict) and "selected_commandlist_file" in item:
-                    item["selected_commandlist_file"] = file_path
+                if isinstance(item, dict) and "last_json_file" in item:
+                    item["last_json_file"] = file_path
                     json_file_found = True
                     break
             
-            # If no selected_commandlist_file object found, add new one
+            # If no last_json_file object found, add new one
             if not json_file_found:
                 json_file_obj = {
-                    "selected_commandlist_file": file_path
+                    "last_json_file": file_path
                 }
                 settings.append(json_file_obj)
             
@@ -627,10 +627,10 @@ class SerialTerminal(QMainWindow):
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                 settings = json.load(f)
                 
-                # Find selected_commandlist_file in the list
+                # Find last_json_file in the list
                 for item in settings:
-                    if isinstance(item, dict) and "selected_commandlist_file" in item:
-                        return item["selected_commandlist_file"]
+                    if isinstance(item, dict) and "last_json_file" in item:
+                        return item["last_json_file"]
                 
                 return None
         except Exception:
@@ -657,8 +657,12 @@ class SerialTerminal(QMainWindow):
         file_dialog.setFileMode(QFileDialog.ExistingFile)
         file_dialog.setAcceptMode(QFileDialog.AcceptOpen)
         
+        from utils import get_user_config_path
+        default_path = os.path.dirname(get_user_config_path("dummy"))
+        
+
         # Set default directory to resources folder
-        default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
+        # default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
         if os.path.exists(default_path):
             file_dialog.setDirectory(default_path)
         
@@ -1198,7 +1202,7 @@ class SerialTerminal(QMainWindow):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
                         user_settings_file = json.load(f)
-                        # Find selected_commandlist_file in the list
+                        # Find last_json_file in the list
                         for item in user_settings_file:
                             if isinstance(item, dict) and "history_settings" in item:
                                 return item["history_settings"]

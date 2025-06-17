@@ -3,8 +3,8 @@
         "index": 0,
         "checked": true,
         "title": {
-            "text": "2.4GHz RF TEST Command List",
-            "disabled": true
+            "text": "",
+            "disabled": false
         },
         "time": 5.0
     },
@@ -12,7 +12,7 @@
         "index": 1,
         "checked": true,
         "title": {
-            "text": "ATZ",
+            "text": "",
             "disabled": false
         },
         "time": 2.0
@@ -21,7 +21,7 @@
         "index": 2,
         "checked": true,
         "title": {
-            "text": "ATM",
+            "text": "",
             "disabled": false
         },
         "time": 0.5
@@ -30,7 +30,7 @@
         "index": 3,
         "checked": true,
         "title": {
-            "text": "AAA",
+            "text": "",
             "disabled": false
         },
         "time": 0.5

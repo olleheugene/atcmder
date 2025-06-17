@@ -5,21 +5,21 @@ import re
 import serial.tools.list_ports
 import shutil
 
-# PORT_SAVE_FILE_NAME   = "atcmder_last_port.json"
-# SETTINGS_FILE_NAME    = "atcmd_settings.json"
-APP_ICON_NAME         = "app_icon.png"
-CLEAR_ICON_NAME       = "clear.png"
-LEFT_ARROW_ICON_NAME  = "left-3arrow.png"
-RIGHT_ARROW_ICON_NAME = "right-3arrow.png"
-DEFAULT_CSS_NAME      = "default"
-LIGHT_CSS_NAME        = "light"
-DARK_CSS_NAME         = "dark"
-RESOURCES_DIR         = "resources"
+APP_ICON_NAME               = "app_icon.png"
+CLEAR_ICON_NAME             = "clear.png"
+LEFT_ARROW_ICON_NAME        = "left-3arrow.png"
+RIGHT_ARROW_ICON_NAME       = "right-3arrow.png"
+DEFAULT_CSS_NAME            = "default"
+LIGHT_CSS_NAME              = "light"
+DARK_CSS_NAME               = "dark"
+RESOURCES_DIR               = "resources"
 
-APP_VERSION           = "1.1.0"
-COMMAND_LIST_FILE     = "atcmder_cmdlist.json"
-PORTS_FILE            = "atcmder_ports.cfg"
-SETTINGS_FILE         = "atcmder_settings.cfg"
+APP_VERSION                 = "1.1.1"
+COMMAND_LIST_FILE           = "atcmder_user_cmdlist.json"
+COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.json"
+COMMANDS_PREDEFINED_FILE2   = "atcmder_predefined_cmd_2.json"
+PORTS_FILE                  = "atcmder_ports.cfg"
+SETTINGS_FILE               = "atcmder_settings.cfg"
 
 def get_user_config_path(filename):
     if sys.platform.startswith("win"):
@@ -31,9 +31,12 @@ def get_user_config_path(filename):
     os.makedirs(config_dir, exist_ok=True)
     return os.path.join(config_dir, filename)
 
-USER_COMMAND_LIST = get_user_config_path(COMMAND_LIST_FILE)
-USER_PORT_LIST    = get_user_config_path(PORTS_FILE)
-USER_SETTINGS     = get_user_config_path(SETTINGS_FILE)
+USER_COMMAND_LIST           = get_user_config_path(COMMAND_LIST_FILE)
+USER_PORT_LIST              = get_user_config_path(PORTS_FILE)
+USER_SETTINGS               = get_user_config_path(SETTINGS_FILE)
+
+PREDEFINED_COMMAND_LIST1    = get_user_config_path(COMMANDS_PREDEFINED_FILE1)
+PREDEFINED_COMMAND_LIST2    = get_user_config_path(COMMANDS_PREDEFINED_FILE2)
 
 
 def get_resources(resource_file):
@@ -46,42 +49,6 @@ def get_resources(resource_file):
 
 def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
-
-# def load_comport_settings():
-#     settings_path = get_resources(SETTINGS_FILE_NAME)
-#     default_settings = {
-#         "comport_settings": {
-#             "port": "",
-#             "baudrate": 115200,
-#             "parity": "N",
-#             "stopbits": 1,
-#             "bytesize": 8,
-#             "timeout": 0.1
-#         }
-#     }
-#     if not os.path.exists(settings_path):
-#         try:
-#             with open(settings_path, 'w', encoding='utf-8') as f:
-#                 json.dump(default_settings, f, indent=4)
-#             print(f"Default settings file created: {settings_path}")
-#         except Exception as e:
-#             print(f"Error creating default settings file: {e}")
-#             return default_settings # Return defaults if file creation fails
-#     try:
-#         with open(settings_path, 'r', encoding='utf-8') as f:
-#             return json.load(f)
-#     except Exception as e:
-#         print(f"Error loading comport settings from {settings_path}: {e}")
-#         return default_settings # Return defaults if file load fails
-
-# def save_comport_settings(settings_data): # Changed parameter name
-#     settings_path = get_resources(SETTINGS_FILE_NAME)
-#     try:
-#         with open(settings_path, 'w', encoding='utf-8') as f:
-#             json.dump(settings_data, f, indent=4)
-#     except Exception as e:
-#         print(f"Error saving comport settings to {settings_path}: {e}")
-
 
 def load_checkbox_lineedit_config(config_file_name=COMMAND_LIST_FILE):
     json_path = get_user_config_path(config_file_name)
@@ -125,25 +92,6 @@ def save_checkbox_lineedit_config(data, config_file_name=COMMAND_LIST_FILE):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Error saving checkbox/lineedit config to {json_path}: {e}")
-
-# def load_last_port_util():
-#     port_file = get_resources(PORT_SAVE_FILE_NAME)
-#     if os.path.exists(port_file):
-#         try:
-#             with open(port_file, 'r', encoding='utf-8') as f:
-#                 data = json.load(f)
-#                 return data.get("selected_port", "")
-#         except json.JSONDecodeError:
-#             print(f"Error decoding JSON from {port_file}")
-#     return ""
-
-# def save_last_port_util(port):
-#     port_file = get_resources(PORT_SAVE_FILE_NAME)
-#     try:
-#         with open(port_file, 'w', encoding='utf-8') as f:
-#             json.dump({"selected_port": port}, f, indent=4)
-#     except Exception as e:
-#         print(f"Error saving last port to {port_file}: {e}")
 
 def get_app_data_folder():
     """Return the path to the app's data folder (cross-platform)"""
@@ -337,3 +285,7 @@ def prepare_default_files():
         shutil.copy(get_resources(PORTS_FILE), USER_PORT_LIST)
     if not os.path.exists(USER_SETTINGS):
         shutil.copy(get_resources(SETTINGS_FILE), USER_SETTINGS)
+    if not os.path.exists(PREDEFINED_COMMAND_LIST1):
+        shutil.copy(get_resources(COMMANDS_PREDEFINED_FILE1), PREDEFINED_COMMAND_LIST1)
+    if not os.path.exists(PREDEFINED_COMMAND_LIST2):
+        shutil.copy(get_resources(COMMANDS_PREDEFINED_FILE2), PREDEFINED_COMMAND_LIST2)

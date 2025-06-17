@@ -1,12 +1,23 @@
 # atcmder
 
-Support Features
-1. ANSI Color scheme
-2. Input history 
-3. Scroll lock
-4. Load predefined AT coommand set
-5. Automatic reconnection for 5 last connected device
-6. Sequential AT Command test
-7. Terminal window expand and colapse
-8. Adjust font size by short cut
-9. Allow user-defined baud rate
+This program is designed to make it easier to control devices via serial communication by allowing users to send predefined commands with a single click. While it also supports the traditional method of entering commands manually through a terminal window, it provides additional functionality such as sending individual preset commands using dedicated send buttons, or executing multiple commands at once based on a scheduled time.
+
+For more detailed information about the supported features, please refer to the description below.
+
+
+
+**Support Features**
+
+1. ANSI color scheme for enhanced terminal readability
+2. Input history (up to 50 entries)
+3. Load and manage predefined AT command sets
+4. Automatic reconnection to the last 5 connected devices
+5. Sequential sending of AT commands
+6. Expandable/collapsible terminal window
+7. Shortcut keys for adjusting font size 
+   * CMD+'+' : Increase font size
+   * CMD+'-' : Decrease font size
+   * CMD+'0' : Reset font size
+8. Support for user-defined baud rates
+9. Support multiple OSes
+
