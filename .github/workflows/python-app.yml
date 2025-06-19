@@ -1,16 +1,16 @@
-name: Build and Test (Multi-OS with PyInstaller)
+name: Multi-OS Release
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    tags:
+      - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  build-and-release:
+    name: Build & Release on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -18,7 +18,7 @@ jobs:
         python-version: ["3.10"]
 
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Set up Python
@@ -31,16 +31,27 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      shell: bash
 
     - name: Build with PyInstaller
       run: |
-        echo "Building on ${{ runner.os }}..."
         pyinstaller atcmder.spec
+
+    - name: Package executable
+      run: |
+        mkdir release
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          zip release/atcmder-windows.zip dist/atcmder/atcmder.exe
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          zip -r release/atcmder-macos.zip dist/atcmder/atcmder.app
+        elif [[ "${{ runner.os }}" == "Linux" ]]; then
+          zip -r release/atcmder-linux.zip dist/atcmder/atcmder
+        fi
       shell: bash
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
       with:
-        name: build-${{ runner.os }}
-        path: dist/
+        files: release/*.zip
+        name: ${{ github.ref_name }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
