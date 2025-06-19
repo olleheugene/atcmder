@@ -42,9 +42,9 @@ jobs:
       run: |
         mkdir release
         if [[ "${{ runner.os }}" == "Windows" ]]; then
-          zip release/atcmder-windows.zip dist/atcmder.exe
+          pwsh -Command "Compress-Archive -Path dist/atcmder.exe -DestinationPath release/atcmder-windows.zip"
         elif [[ "${{ runner.os }}" == "macOS" ]]; then
-          zip -r release/atcmder-macos.zip dist/atcmder.app
+          zip -r release/atcmder-macos.zip dist/atcmder
         elif [[ "${{ runner.os }}" == "Linux" ]]; then
           zip -r release/atcmder-linux.zip dist/atcmder
         fi
