@@ -20,6 +20,14 @@ def get_resources(resource_file):
         path = os.path.join("resources", resource_file)
     return path
 
+if sys.platform == "win32":
+    icon_file = "resources/app_icon.ico"
+elif sys.platform == "darwin":
+    icon_file = "resources/app_icon.icns"
+else:
+    icon_file = "resources/app_icon.png"
+
+
 binaries = []
 hiddenimports = ['serial_terminal', 'utils']
 tmp_ret = collect_all('serial')
@@ -57,7 +65,7 @@ app = BUNDLE(
         runtime_tmpdir=None,
         console=False,
         windowed=True,
-        icon='app_icon.icns',
+        icon=icon_file,
         disable_windowed_traceback=False,
         argv_emulation=False,
         target_arch=None,
@@ -65,6 +73,6 @@ app = BUNDLE(
         entitlements_file=None,
     ),
     name='atcmder.app',
-    icon='./resources/app_icon.icns',
+    icon=icon_file,
     bundle_identifier=None
 )
