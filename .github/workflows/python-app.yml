@@ -42,11 +42,11 @@ jobs:
       run: |
         mkdir release
         if [[ "${{ runner.os }}" == "Windows" ]]; then
-          zip release/atcmder-windows.zip dist/atcmder/atcmder.exe
+          zip release/atcmder-windows.zip dist/atcmder.exe
         elif [[ "${{ runner.os }}" == "macOS" ]]; then
-          zip -r release/atcmder-macos.zip dist/atcmder/atcmder.app
+          zip -r release/atcmder-macos.zip dist/atcmder.app
         elif [[ "${{ runner.os }}" == "Linux" ]]; then
-          zip -r release/atcmder-linux.zip dist/atcmder/atcmder
+          zip -r release/atcmder-linux.zip dist/atcmder
         fi
       shell: bash
 
