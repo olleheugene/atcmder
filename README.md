@@ -23,4 +23,4 @@ For more detailed information about the supported features, please refer to the 
 
 
 
-![main](./readme/main.png)
+![main](./readme/introduction.gif)
