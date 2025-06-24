@@ -12,6 +12,7 @@ from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer
 import utils
 from terminal_widget import TerminalWidget
+from json_editor import JsonEditorDialog
 
 import serial.tools.list_ports
 def list_serial_ports():
@@ -65,6 +66,10 @@ class SerialTerminal(QMainWindow):
         load_commands_action = QAction("Load CMD list", self)
         load_commands_action.triggered.connect(self.load_command_list_from_file)
         file_menu.addAction(load_commands_action)
+        edit_cmd_action = QAction("Edit CMD list", self)
+        edit_cmd_action.setToolTip("Edit the currently selected predefined command list in your default editor")
+        edit_cmd_action.triggered.connect(self.edit_current_command_list)
+        file_menu.addAction(edit_cmd_action)
         open_config_folder_action = QAction("Open Configfile folder", self)
         open_config_folder_action.triggered.connect(self.open_config_folder)
         file_menu.addAction(open_config_folder_action)
@@ -353,6 +358,15 @@ class SerialTerminal(QMainWindow):
             return True
             
         return super().eventFilter(obj, event)
+
+    def edit_current_command_list(self):
+        """Open the currently selected predefined command list in an internal JSON editor."""
+        file_path = self.current_json_file if self.current_json_file else utils.USER_COMMAND_LIST
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "File Not Found", f"File does not exist:\n{file_path}")
+            return
+        dlg = JsonEditorDialog(file_path, self)
+        dlg.exec()
 
     def handle_character_input(self, char):
         """Handle character input"""
