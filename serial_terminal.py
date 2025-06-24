@@ -109,17 +109,26 @@ class SerialTerminal(QMainWindow):
 
         self.left_widget = QWidget()
         self.left_layout = QVBoxLayout()
-        serial_group = QGroupBox("Serial Settings")
+        self.serial_group = QGroupBox("Serial Settings")
         serial_group_layout = QVBoxLayout()
+        serial_group_layout.setSpacing(0)
+        serial_group_layout.setContentsMargins(0, 0, 0, 0)
+
         self.serial_port_combo = QComboBox()
         self.serial_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         port_layout = QHBoxLayout()
-        port_label = QLabel("Port:")
-        port_layout.addWidget(port_label)
+        port_layout.setSpacing(0)
+        port_layout.setContentsMargins(0, 0, 0, 0)
+        self.port_label = QLabel("Port:")
+        self.port_label.setContentsMargins(5, 0, 5, 0)
+        port_layout.addWidget(self.port_label)
         port_layout.addWidget(self.serial_port_combo)
         serial_group_layout.addLayout(port_layout)
+
         self.serial_port_combo.currentTextChanged.connect(self.on_port_changed)
         baud_btn_layout = QHBoxLayout()
+        baud_btn_layout.setSpacing(0)
+        baud_btn_layout.setContentsMargins(10, 0, 10, 0)
         self.baudrate_combo = QComboBox()
         baudrates = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000"]
         self.baudrate_combo.addItems(baudrates)
@@ -128,18 +137,24 @@ class SerialTerminal(QMainWindow):
         from PySide6.QtGui import QIntValidator
         self.baudrate_combo.lineEdit().setValidator(QIntValidator(1, 10000000, self))
         self.baudrate_combo.currentTextChanged.connect(self.on_baudrate_changed)
+        self.baudrate_combo.setContentsMargins(0, 0, 20, 0)
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setCheckable(True)
         self.connect_btn.clicked.connect(self.toggle_serial_connection)
+        self.connect_btn.setFixedWidth(90) 
+        self.connect_btn.setToolTip(f"Shortcut: F2")
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh_serial_ports)
-        baud_btn_layout.addWidget(QLabel("Baudrate:"))
+        self.refresh_btn.setFixedWidth(70) 
+        self.baud_label = QLabel("Baudrate:")
+        baud_btn_layout.addWidget(self.baud_label)
         baud_btn_layout.addWidget(self.baudrate_combo)
         baud_btn_layout.addWidget(self.connect_btn)
         baud_btn_layout.addWidget(self.refresh_btn)
+        baud_btn_layout.setContentsMargins(5, 0, 5, 0)
         serial_group_layout.addLayout(baud_btn_layout)
-        serial_group.setLayout(serial_group_layout)
-        self.left_layout.addWidget(serial_group)
+        self.serial_group.setLayout(serial_group_layout)
+        self.left_layout.addWidget(self.serial_group)
         self.checkboxes = []
         self.lineedits = []
         self.sendline_btns = []
@@ -149,6 +164,7 @@ class SerialTerminal(QMainWindow):
             checkbox = QCheckBox()
             lineedit = QLineEdit()
             send_btn = QPushButton("Send")
+            send_btn.setToolTip(f"Shortcut: Alt+{str(i)}")
             def make_send_handler(index):
                 return lambda: self.send_lineedit_command(index)
             send_btn.clicked.connect(make_send_handler(i))
@@ -173,18 +189,18 @@ class SerialTerminal(QMainWindow):
         self.clear_btn.setFixedSize(24, 24)
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
-        textedit_layout = QVBoxLayout()
-        textedit_layout.setContentsMargins(0, 0, 8, 12)
-        btn_h_layout = QHBoxLayout()
-        btn_h_layout.addStretch()
-        btn_h_layout.addWidget(self.clear_btn)
+        self.right_layout = QVBoxLayout()
+        self.right_layout.setContentsMargins(0, 0, 8, 12)
+        self.top_right_btn_layout = QHBoxLayout()
+        self.top_right_btn_layout.addStretch()
+        self.top_right_btn_layout.addWidget(self.clear_btn)
         btn_v_layout = QVBoxLayout()
         btn_v_layout.addSpacing(10)
-        btn_v_layout.addLayout(btn_h_layout)
-        textedit_layout.addLayout(btn_v_layout)
-        textedit_layout.addWidget(self.terminal_widget)
-        right_widget = QWidget()
-        right_widget.setLayout(textedit_layout)
+        btn_v_layout.addLayout(self.top_right_btn_layout)
+        self.right_layout.addLayout(btn_v_layout)
+        self.right_layout.addWidget(self.terminal_widget)
+        self.right_widget = QWidget()
+        self.right_widget.setLayout(self.right_layout)
         self.toggle_btn = QPushButton()
         self.toggle_btn.setFixedWidth(24)
         self.toggle_btn.setCheckable(True)
@@ -201,7 +217,7 @@ class SerialTerminal(QMainWindow):
         splitter = QSplitter()
         splitter.addWidget(self.left_widget)
         splitter.addWidget(btn_widget)
-        splitter.addWidget(right_widget)
+        splitter.addWidget(self.right_widget)
         splitter.setSizes([250, 24, 850])
         central = QWidget()
         main_layout = QHBoxLayout()
@@ -239,6 +255,7 @@ class SerialTerminal(QMainWindow):
 
                 # Font size adjustment
                 if modifiers == Qt.KeyboardModifier.ControlModifier:
+                    # Ctrl + Plus
                     if key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
                         self.increase_font_size()
                         return True
@@ -248,14 +265,57 @@ class SerialTerminal(QMainWindow):
                     elif key == Qt.Key.Key_0:
                         self.reset_font_size()
                         return True
-                    # Ctrl+C
                     elif key == Qt.Key.Key_C:
                         self.handle_ctrl_c()
                         return True
-                    # Ctrl+V
                     elif key == Qt.Key.Key_V:
                         self.handle_paste()
                         return True
+                elif modifiers == Qt.KeyboardModifier.AltModifier:
+                    # Alt + 1
+                    if key == Qt.Key.Key_1:
+                        self.send_lineedit_command(1)
+                        return True
+                    elif key == Qt.Key.Key_2:
+                        self.send_lineedit_command(2)
+                        return True
+                    elif key == Qt.Key.Key_3:
+                        self.send_lineedit_command(3)
+                        return True
+                    elif key == Qt.Key.Key_4:
+                        self.send_lineedit_command(4)
+                        return True
+                    elif key == Qt.Key.Key_5:
+                        self.send_lineedit_command(5)
+                        return True
+                    elif key == Qt.Key.Key_6:
+                        self.send_lineedit_command(6)
+                        return True
+                    elif key == Qt.Key.Key_7:
+                        self.send_lineedit_command(7)
+                        return True
+                    elif key == Qt.Key.Key_8:
+                        self.send_lineedit_command(8)
+                        return True
+                    elif key == Qt.Key.Key_9:
+                        self.send_lineedit_command(9)
+                        return True
+                    elif key == Qt.Key.Key_0:
+                        self.send_lineedit_command(0)
+                        return True
+                else:
+                    if key == Qt.Key_F2:
+                        # Connect if not already connected
+                        if not (self.serial and self.serial.is_open):
+                            self.toggle_serial_connection()
+                        return True
+                    
+                    elif key == Qt.Key_F3:
+                        # Disconnect if connected
+                        if self.serial and self.serial.is_open:
+                            self.toggle_serial_connection()
+                        return True
+
         
             if not (self.serial and self.serial.is_open):
                 return True
@@ -842,6 +902,7 @@ class SerialTerminal(QMainWindow):
             self.update_status_bar("Disconnected")
             self.connect_btn.setChecked(False)
             self.connect_btn.setText("Connect")
+            self.connect_btn.setToolTip(f"Shortcut: F2")
         else:
             try:
                 self.serial = serial.Serial(self.selected_port, self.baudrate, timeout=0.1)
@@ -852,6 +913,7 @@ class SerialTerminal(QMainWindow):
                 self.connect_btn.setChecked(True)
                 self.connect_btn.setText("Disconnect")
                 self.save_recent_port(self.selected_port)  # Save recent port
+                self.connect_btn.setToolTip(f"Shortcut: F3")
             except serial.SerialException as e:
                 QMessageBox.critical(self, "Connection Error", str(e))
 
@@ -887,18 +949,99 @@ class SerialTerminal(QMainWindow):
                 self.serial_port_combo.setCurrentIndex(0)
                 self.selected_port = ports[0]
 
-    def clear_terminal(self):
-        self.terminal_widget.clear()
+    def _setup_serial_group_layout(self, horizontal=False):
+        """serial_group의 레이아웃을 수평 또는 수직으로 재구성합니다."""
+        
+        # 1. 재사용할 모든 위젯을 현재 레이아웃에서 분리하여 소유권 문제를 방지합니다.
+        # 이 위젯들은 self의 멤버이므로 메모리에서 삭제되지 않습니다.
+        self.port_label.setParent(None)
+        self.serial_port_combo.setParent(None)
+        self.baud_label.setParent(None)
+        self.baudrate_combo.setParent(None)
+        self.connect_btn.setParent(None)
+        self.refresh_btn.setParent(None)
+
+        # 2. 기존 레이아웃을 완전히 삭제합니다.
+        # 위젯들이 모두 분리되었으므로, 레이아웃 객체만 안전하게 삭제됩니다.
+        if self.serial_group.layout() is not None:
+            # 임시 위젯에 레이아웃을 설정하여 이전 레이아웃을 파괴하는 트릭
+            QWidget().setLayout(self.serial_group.layout())
+
+        if horizontal:
+            # 3. 새로운 수평 레이아웃을 생성하고 위젯을 추가합니다.
+            layout = QHBoxLayout()
+            layout.setSpacing(1)
+            layout.setContentsMargins(5, 2, 5, 2)
+            
+            layout.addWidget(self.port_label)
+            layout.addWidget(self.serial_port_combo)
+            layout.addWidget(self.baud_label)
+            layout.addWidget(self.baudrate_combo)
+            layout.addWidget(self.connect_btn)
+            layout.addWidget(self.refresh_btn)
+
+            # 4. 수평 모드에 맞는 최소 크기를 설정합니다.
+            self.serial_group.setTitle("") # 공간 확보를 위해 제목 제거
+            self.serial_group.setMinimumWidth(450) 
+            self.serial_group.setMinimumHeight(45) # 한 줄에 맞는 높이로 수정
+        else:
+            # 3. 원래의 두 줄 수직 레이아웃을 다시 생성합니다.
+            layout = QVBoxLayout()
+            layout.setSpacing(0)
+            layout.setContentsMargins(0, 0, 0, 0)
+            
+            port_layout = QHBoxLayout()
+            port_layout.setContentsMargins(0, 0, 0, 0)
+            port_layout.addWidget(self.port_label)
+            port_layout.addWidget(self.serial_port_combo)
+            
+            baud_btn_layout = QHBoxLayout()
+            baud_btn_layout.setSpacing(0)
+            baud_btn_layout.setContentsMargins(5, 0, 5, 0)
+            baud_btn_layout.addWidget(self.baud_label)
+            baud_btn_layout.addWidget(self.baudrate_combo)
+            baud_btn_layout.addWidget(self.connect_btn)
+            baud_btn_layout.addWidget(self.refresh_btn)
+            
+            layout.addLayout(port_layout)
+            layout.addLayout(baud_btn_layout)
+
+            # 4. 수직 모드에 맞는 타이틀과 크기를 복원합니다.
+            self.serial_group.setTitle("Serial Settings")
+            self.serial_group.setMinimumWidth(0)
+            self.serial_group.setMinimumHeight(0)
+            
+        # 5. 완성된 새 레이아웃을 그룹 위젯에 설정합니다.
+        self.serial_group.setLayout(layout)
 
     def toggle_left_panel(self):
         if self.left_panel_visible:
-            self.splitter.setSizes([0, 24, 850])
+            # Collapse: 수평 레이아웃으로 변경하고 오른쪽으로 이동
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.RIGHT_ARROW_ICON_NAME)))
+
+            # 1. 위젯을 현재 레이아웃에서 먼저 분리합니다.
+            self.serial_group.setParent(None)
+            # 2. 그 다음 내부 레이아웃을 수평으로 변경합니다.
+            self._setup_serial_group_layout(horizontal=True)
+            # 3. 준비된 위젯을 새 레이아웃에 추가합니다.
+            self.top_right_btn_layout.insertWidget(0, self.serial_group)
+
+            self.splitter.widget(0).hide()
         else:
-            self.splitter.setSizes([250, 24, 850])
+            # Expand: 수직 레이아웃으로 변경하고 왼쪽으로 복귀
             self.toggle_btn.setIcon(QIcon(utils.get_resources(utils.LEFT_ARROW_ICON_NAME)))
+
+            # 1. 위젯을 현재 레이아웃에서 먼저 분리합니다.
+            self.serial_group.setParent(None)
+            # 2. 내부 레이아웃을 수직으로 변경합니다.
+            self._setup_serial_group_layout(horizontal=False)
+            # 3. 준비된 위젯을 원래 레이아웃에 추가합니다.
+            self.left_layout.insertWidget(0, self.serial_group)
+
+            self.splitter.widget(0).show()
+
         self.left_panel_visible = not self.left_panel_visible
-        self.terminal_widget.update_scrollbar() 
+        self.terminal_widget.update_scrollbar()
 
     def send_lineedit_command(self, index):
         command = self.lineedits[index].text()
@@ -1044,6 +1187,9 @@ class SerialTerminal(QMainWindow):
 
                         lines = re.split(r'(\r\n|\n|\r)', combined_data)
                         i = 0
+                        while i < len(lines) - 1:
+                            line = lines[i]
+                            sep = lines[i+1]
                         while i < len(lines) - 1:
                             line = lines[i]
                             sep = lines[i+1]
