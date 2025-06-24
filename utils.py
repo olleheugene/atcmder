@@ -14,7 +14,7 @@ LIGHT_CSS_NAME              = "light"
 DARK_CSS_NAME               = "dark"
 RESOURCES_DIR               = "resources"
 
-APP_VERSION                 = "1.2.0"
+APP_VERSION                 = "1.3.0"
 COMMAND_LIST_FILE           = "atcmder_user_cmdlist.json"
 COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.json"
 COMMANDS_PREDEFINED_FILE2   = "atcmder_predefined_cmd_2.json"
