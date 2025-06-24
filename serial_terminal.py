@@ -1190,9 +1190,6 @@ class SerialTerminal(QMainWindow):
                         while i < len(lines) - 1:
                             line = lines[i]
                             sep = lines[i+1]
-                        while i < len(lines) - 1:
-                            line = lines[i]
-                            sep = lines[i+1]
                             full_line = line + sep
                             is_complete, incomplete_pos = utils.is_ansi_sequence_complete(full_line)
                             if is_complete:
