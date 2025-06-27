@@ -15,6 +15,7 @@ class TerminalWidget(QAbstractScrollArea):
         self.char_width = self.font_metrics.horizontalAdvance('M')
         self.lines = []
         self.scroll_offset = 0
+        self.auto_scroll = True 
 
         # ANSI color cache
         self.ansi_colors = {
@@ -66,6 +67,14 @@ class TerminalWidget(QAbstractScrollArea):
         if not text:
             return
 
+        # Enable a setting to ensure the scrollbar is always shown.
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+
+        # Record the current line count (before adding text)
+        lines_before = len(self.lines)
+        last_line_length_before = len(self._line_text(self.lines[-1])) if self.lines else 0
+
         # Handle ANSI cursor home (ESC[H])
         cursor_home_pattern = re.compile(r'\x1B\[H')
         if cursor_home_pattern.search(text):
@@ -90,11 +99,46 @@ class TerminalWidget(QAbstractScrollArea):
                 else:
                     merged.append((part, color))
             self.lines[-1].extend(merged)
+        
         if len(self.lines) > MAX_TERMINAL_LINES:
             del self.lines[:len(self.lines) - MAX_TERMINAL_LINES]
-        self.scroll_offset = 0
+        
+        # Ensure the scroll offset remains stable after adding data to avoid view shifting
+        visible_lines = max(1, self.viewport().height() // self.line_height)
+
+        # If auto-scroll is disabled, adjust the scroll offset to maintain the current position when new content is added
+        if not self.auto_scroll and self.scroll_offset > 0:
+            # Calculate the number of newly added lines
+            lines_after = len(self.lines)
+            new_lines_added = lines_after - lines_before
+
+            # If text was added to the existing last line (without a line break), no offset adjustment is needed
+            # Only adjust the offset if new lines were added
+            if new_lines_added > 0:
+                self.scroll_offset += new_lines_added
+
+            # If text was added to the existing last line (without a line break), no offset adjustment is needed
+            # (This is special handling for data coming in one line at a time)
+            if new_lines_added == 0 and len(self.lines) > 0:
+                last_line_length_after = len(self._line_text(self.lines[-1]))
+                if last_line_length_after > last_line_length_before:
+                    # If the length of the last line has increased but is not actually visible on the screen
+                    # This is to maintain the scroll position even if text is added to the same line
+                    self.viewport().update()
+
+        # Schedule an update
         self._schedule_update()
-        self.set_cursor_to_end()
+
+        # If auto-scroll is enabled, move the cursor to the bottom and scroll
+        if self.auto_scroll:
+            # Reset scroll offset (scroll to bottom)
+            self.scroll_offset = 0
+            self.set_cursor_to_end()
+
+            # Move the scrollbar to the bottom
+            verticalBar = self.verticalScrollBar()
+            if verticalBar:
+                verticalBar.setValue(verticalBar.maximum())
 
     def _schedule_update(self):
         if not self._update_pending:
@@ -154,8 +198,29 @@ class TerminalWidget(QAbstractScrollArea):
         visible_lines = max(1, effective_height // self.line_height)
         h_scroll_offset = self.horizontalScrollBar().value()
         total_lines = len(self.lines)
-        start_line = max(0, total_lines - visible_lines - self.scroll_offset)
+        
+        # Calculate the starting line based on auto_scroll state and scroll_offset
+        # Stable calculation to prevent scroll synchronization errors
+        if self.auto_scroll:
+            # If auto-scroll is enabled, always show the most recent content
+            start_line = max(0, total_lines - visible_lines)
+            self.scroll_offset = 0  # If auto_scroll is enabled, the scroll offset is 0
+        else:
+            # Scroll offset boundary check
+            max_offset = max(0, total_lines - visible_lines)
+            if self.scroll_offset > max_offset:
+                self.scroll_offset = max_offset
+
+            # Calculate the starting line based on scroll position
+            start_line = max(0, total_lines - visible_lines - self.scroll_offset)
+
+        # Calculate the ending line to fill the screen regardless of scroll position
         end_line = min(total_lines, start_line + visible_lines)
+
+        # If there are no lines to display, return early
+        if start_line >= total_lines:
+            painter.end()
+            return
         
         y = 5
         for line_idx in range(start_line, end_line):
@@ -220,6 +285,9 @@ class TerminalWidget(QAbstractScrollArea):
         return len(self._line_text(line_parts))
 
     def update_scrollbar(self):
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        
         if hasattr(self, 'font'):
             self.font_metrics = QFontMetrics(self.font)
             self.line_height = self.font_metrics.height()
@@ -250,19 +318,49 @@ class TerminalWidget(QAbstractScrollArea):
         
         # Vertical Scrollbar 업데이트
         self.verticalScrollBar().blockSignals(True)
+        
+        min_range = 10
+        
         if total_lines > visible_lines:
             max_scroll = total_lines - visible_lines
-            self.verticalScrollBar().setRange(0, max_scroll)
-            self.verticalScrollBar().setPageStep(visible_lines)
+            
+            # Scroll offset should not exceed the valid range
+            if self.scroll_offset > max_scroll:
+                self.scroll_offset = max_scroll
+
+            # If the scroll range is too small, adjust to the minimum value
+            if max_scroll < min_range:
+                self.verticalScrollBar().setRange(0, min_range)
+                self.verticalScrollBar().setPageStep(min_range)
+            else:
+                self.verticalScrollBar().setRange(0, max_scroll)
+                self.verticalScrollBar().setPageStep(visible_lines)
+                
             self.verticalScrollBar().setSingleStep(1)
-            scroll_value = max_scroll - self.scroll_offset
-            self.verticalScrollBar().setValue(scroll_value)
+            
+            # Adjust scroll position based on the auto_scroll state
+            if self.auto_scroll:
+                self.verticalScrollBar().setValue(max_scroll)
+                self.scroll_offset = 0
+            else:
+                # Calculate scroll position - accurately maintain user-scrolled position
+                scroll_value = max(0, max_scroll - self.scroll_offset)
+
+                # Bug fix: Ensure the value does not exceed the range
+                if scroll_value <= self.verticalScrollBar().maximum():
+                    self.verticalScrollBar().setValue(scroll_value)
         else:
-            # 스크롤바를 항상 표시하기 위해 최소 범위 설정
-            self.verticalScrollBar().setRange(0, 1)
+            # If there are no lines to display, return early
+            self.verticalScrollBar().setRange(0, min_range)
+            self.verticalScrollBar().setPageStep(min_range)
             self.verticalScrollBar().setValue(0)
+            
             if self.scroll_offset != 0:
                 self.scroll_offset = 0
+                
+            # If there are not many lines, enable auto-scrolling
+            self.auto_scroll = True
+            
         self.verticalScrollBar().blockSignals(False)
         
         # Horizontal Scrollbar 업데이트
@@ -281,35 +379,76 @@ class TerminalWidget(QAbstractScrollArea):
             self.horizontalScrollBar().setPageStep(int(effective_width * 0.8))
             self.horizontalScrollBar().setSingleStep(self.char_width)
         else:
-            self.horizontalScrollBar().setRange(0, 1)
+            # Set a minimum range to always show the horizontal scrollbar
+            self.horizontalScrollBar().setRange(0, 10)
+            self.horizontalScrollBar().setPageStep(10)
             self.horizontalScrollBar().setValue(0)
         self.horizontalScrollBar().blockSignals(False)
 
     def wheelEvent(self, event):
+        # Check the direction of the mouse wheel scroll
         delta = event.angleDelta().y()
-        scroll_lines = 3
-        
+        scroll_lines = 3  # Scroll speed adjustment
+
         visible_lines = max(1, self.viewport().height() // self.line_height)
         total_lines = len(self.lines)
         max_scroll = max(0, total_lines - visible_lines)
         
-        if delta > 0:
-            self.scroll_offset = min(self.scroll_offset + scroll_lines, max_scroll)
-        else:
-            self.scroll_offset = max(0, self.scroll_offset - scroll_lines)
+        old_offset = self.scroll_offset
+        old_auto_scroll = self.auto_scroll
         
-        self.update_scrollbar()
-        self.viewport().update()
+        if delta > 0:  # Scroll up (mouse wheel forward)
+            # When scrolling up, always disable auto-scrolling
+            self.auto_scroll = False
+            # Increase scroll offset (scroll up)
+            self.scroll_offset = min(self.scroll_offset + scroll_lines, max_scroll)
+        else:  # Scroll down (mouse wheel backward)
+            # Decrease offset when scrolling down
+            new_offset = max(0, self.scroll_offset - scroll_lines)
+            self.scroll_offset = new_offset
+
+            # Check if reached the bottom
+            if new_offset <= 0:
+                self.auto_scroll = True  # If reached the bottom, enable auto-scrolling
+            else:
+                self.auto_scroll = False  # If still in the middle of scrolling
+
+        # Update scrollbar and viewport only if the state has changed
+        if old_offset != self.scroll_offset or old_auto_scroll != self.auto_scroll:
+            # Debug message: Print state after wheel event
+            # print(f"Wheel: delta={delta}, offset={self.scroll_offset}, auto={self.auto_scroll}")
+            
+            self.update_scrollbar()
+            self.viewport().update()
+        
         event.accept()
 
     def scrollContentsBy(self, dx, dy):
-        if dy != 0:
+        if dy != 0:  # Vertical scroll change
             visible_lines = max(1, self.viewport().height() // self.line_height)
             total_lines = len(self.lines)
+            
             if total_lines > visible_lines:
                 scroll_value = self.verticalScrollBar().value()
+                max_value = self.verticalScrollBar().maximum()
                 max_scroll = total_lines - visible_lines
+                
+                # Calculate offset based on the current scroll value
+                old_offset = self.scroll_offset
                 self.scroll_offset = max_scroll - scroll_value
+
+                # Check if scrollbar is at the bottom (with 5 pixels tolerance)
+                tolerance = 5
+                if scroll_value >= max_value - tolerance:
+                    if not self.auto_scroll:
+                        self.auto_scroll = True  # If at the bottom, enable auto-scrolling
+                else:
+                    if self.auto_scroll:
+                        self.auto_scroll = False  # If not, disable auto-scrolling
+
+                # Debug message: Print scroll state
+                # print(f"Scroll: value={scroll_value}/{max_value}, offset={self.scroll_offset}, auto={self.auto_scroll}")
+        
         self.viewport().update()
 
     def mousePressEvent(self, event):
@@ -434,5 +573,40 @@ class TerminalWidget(QAbstractScrollArea):
         else:
             self.cursor_line = len(self.lines) - 1
             self.cursor_col = self._line_length(self.lines[-1])
+        
+        # Always keep the cursor visible when moving it to the end
         self.cursor_visible = True
+
+        # Only move scrollbar to bottom if auto_scroll is enabled
+        # This allows input even when scrolled up, while keeping the view fixed
+        if self.auto_scroll and len(self.lines) > 0:
+            # Move scrollbar to bottom
+            self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+            # Reset scroll offset
+            self.scroll_offset = 0
+
+        # Update viewport
         self.viewport().update()
+
+    def set_auto_scroll(self, enabled):
+        """Method to set the auto-scroll state"""
+        self.auto_scroll = enabled
+        if enabled:
+            self.scroll_offset = 0
+            self.update_scrollbar()
+            self.viewport().update()
+
+    def toggle_auto_scroll(self):
+        """Toggle auto-scrolling on or off."""
+        self.set_auto_scroll(not self.auto_scroll)
+
+    def is_auto_scroll_enabled(self):
+        """Check if auto-scrolling is enabled."""
+        return self.auto_scroll
+
+    def scroll_to_bottom(self):
+        """Scroll to the bottom of the terminal."""
+        if self.lines:
+            self.scroll_offset = len(self.lines)
+            self.update_scrollbar()
+            self.viewport().update()

@@ -291,9 +291,17 @@ class SerialTerminal(QMainWindow):
     def eventFilter(self, obj, event):
         key = None
         text = ""
+        
+        # Detecting a scroll event
+        if event.type() == QEvent.Type.Wheel and obj is self.terminal_widget:
+            # Check the scroll position shortly after a mouse wheel event occurs
+            QTimer.singleShot(50, lambda: self.check_scroll_position())
+        
         if obj is self.terminal_widget:
             if event.type() == QEvent.Type.Resize:
-                return False  # Let Qt handle resizing
+                # Check scroll position after resizing
+                QTimer.singleShot(50, lambda: self.check_scroll_position())
+                return False  # Let Qt handle the resizing
             if event.type() == QEvent.Type.KeyPress:
                 key = event.key()
                 text = event.text()
@@ -492,12 +500,17 @@ class SerialTerminal(QMainWindow):
             if len(self.command_history) > max_history:
                 self.command_history = self.command_history[:max_history]
 
-            # Clear buffer and reset index
-            self.current_input_buffer = ""
-            self.history_index = -1
-        else:
-            # Empty Enter
-            self.serial.write(b"\r\n")
+        # Enter key input activates auto-scrolling and moves the scrollbar to the bottom
+        self.terminal_widget.set_auto_scroll(True)
+
+        # Immediately move the scrollbar to the bottom
+        scrollbar = self.terminal_widget.verticalScrollBar()
+        if scrollbar:
+            scrollbar.setValue(scrollbar.maximum())
+
+        # Reset input buffer and history index
+        self.current_input_buffer = ""
+        self.history_index = -1
         
         self.show_current_input()
 
@@ -622,8 +635,22 @@ class SerialTerminal(QMainWindow):
         """Update terminal output"""
         # Apply ANSI spacing processing before displaying
         data = utils.process_ansi_spacing(data)
+        
+        # Save the auto-scroll state before processing the data
+        auto_scroll_state = self.terminal_widget.auto_scroll
+        
+        # Append text - content is always added regardless of auto_scroll state
         self.terminal_widget.append_text(data)
-        self.terminal_widget.update()  # or repaint() if needed
+
+        # Refresh the screen - repaint() can provide more immediate updates
+        self.terminal_widget.repaint()
+
+        # If auto-scroll is enabled, check the scrollbar position
+        if auto_scroll_state:
+            # Set the scrollbar to the maximum value to always show the latest content
+            # Here, we don't call set_auto_scroll directly, but use check_scroll_position to
+            # calculate the scrollbar position and set the state
+            QTimer.singleShot(0, self.check_scroll_position)
 
         # If autocomplete result arrived, update input buffer
         # Example: last input was tab, serial response is a single line (command)
@@ -650,8 +677,37 @@ class SerialTerminal(QMainWindow):
             self.font_size_action.setText(f"Current Font Size: {self.font_size}")
 
     def check_scroll_position(self):
-        """Check scroll position (TerminalWidget handles this automatically)"""
-        pass
+        """Check scrollbar position and set auto-scroll state."""
+        if not hasattr(self, 'terminal_widget') or not self.terminal_widget:
+            return
+            
+        scrollbar = self.terminal_widget.verticalScrollBar()
+        if not scrollbar:
+            return
+        
+        # Scrollbar position-based auto-scroll settings
+        # Check with some tolerance (even if not exactly at the bottom, if it's close, enable auto-scroll)
+        tolerance = 10  # Increase tolerance (activate auto-scroll over a wider range)
+        max_value = scrollbar.maximum()
+        current_value = scrollbar.value()
+
+        # Save previous auto_scroll state
+        prev_auto_scroll = self.terminal_widget.auto_scroll
+
+        # If the scrollbar is at the bottom (or within tolerance), enable auto-scroll
+        is_at_bottom = (current_value >= max_value - tolerance)
+        
+        if is_at_bottom:
+            if not prev_auto_scroll:
+                # print(f"Enabling auto-scroll: {current_value}/{max_value}")
+                self.terminal_widget.set_auto_scroll(True)
+
+                # Force scrollbar to the bottom (even if within tolerance)
+                scrollbar.setValue(max_value)
+        else:
+            if prev_auto_scroll:
+                # print(f"Disabling auto-scroll: {current_value}/{max_value}")
+                self.terminal_widget.set_auto_scroll(False)
 
     def save_recent_ports(self):
         # Save recent port list (YAML)
@@ -1288,13 +1344,11 @@ class SerialTerminal(QMainWindow):
             self.update_status_bar(f"Warning: Could not save to {os.path.basename(filename)}: {str(e)}")
 
     def load_checkbox_lineedit(self, filename):
-        # YAML 버전
         try:
             with open(filename, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except Exception:
             data = []
-        # ...기존 UI 반영 코드...
         self.apply_config_data_to_ui(data)
 
     def read_serial_data(self):
@@ -1689,10 +1743,6 @@ class SerialTerminal(QMainWindow):
         self.save_font_settings()
         self.update_status_bar(f"Font size reset to: {self.font_size}")
     
-    def check_scroll_position(self):
-        """Check scroll position (TerminalWidget handles automatically)"""
-        # This function is intentionally left blank as TerminalWidget manages scrolling automatically
-        pass
 
     def try_reconnect_serial(self):
         if self.serial and self.serial.is_open:
