@@ -1,2 +1,3 @@
 PySide6>=6.4
 pyserial
+yaml
