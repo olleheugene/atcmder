@@ -412,12 +412,16 @@ class SerialTerminal(QMainWindow):
 
     def edit_current_command_list(self):
         """Open the currently selected predefined command list in an internal YAML editor."""
-        file_path = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
-        if not os.path.exists(file_path):
-            QMessageBox.warning(self, "File Not Found", f"File does not exist:\n{file_path}")
+        file_path = self.current_cmdlist_file
+        if not file_path or not os.path.exists(file_path):
+            QMessageBox.warning(self, "File Not Found", "No command list file is currently loaded or the file does not exist.")
             return
+        
         dlg = YamlEditorDialog(file_path, self)
-        dlg.exec()
+        # The exec() method returns True if the dialog was accepted (e.g., Save clicked)
+        if dlg.exec():
+            self.load_and_validate_config_file(file_path, popup=False)
+            self.update_status_bar(f"Reloaded '{os.path.basename(file_path)}' after editing.")
 
     def show_shortcut_list(self):
         shortcuts = (
