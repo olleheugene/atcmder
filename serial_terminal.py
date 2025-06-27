@@ -79,10 +79,10 @@ class SerialTerminal(QMainWindow):
 
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
-        load_commands_action = QAction("Load CMD list", self)
+        load_commands_action = QAction("Load Command list", self)
         load_commands_action.triggered.connect(self.load_command_list_from_file)
         file_menu.addAction(load_commands_action)
-        edit_cmd_action = QAction("Edit CMD list", self)
+        edit_cmd_action = QAction("Edit Command list", self)
         edit_cmd_action.setToolTip("Edit the currently selected predefined command list in your default editor")
         edit_cmd_action.triggered.connect(self.edit_current_command_list)
         file_menu.addAction(edit_cmd_action)
