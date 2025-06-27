@@ -5,7 +5,7 @@ import time
 import re
 import subprocess
 from PySide6.QtWidgets import (
-    QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog
+    QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog
 )
 from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer
@@ -14,7 +14,7 @@ from terminal_widget import TerminalWidget
 from yaml_editor import YamlEditorDialog
 import yaml
 
-LINEEDIT_MAX_NUMBER = 10  # Maximum number of line edits
+LINEEDIT_MAX_NUMBER = 10
 
 import serial.tools.list_ports
 def list_serial_ports():
@@ -62,6 +62,8 @@ class SerialTerminal(QMainWindow):
         self.current_cmdlist_file = None
         self.full_command_list = []
         self.current_page = 0
+        self.predefined_cmd_mappings = {}
+        self.load_predefined_cmd_mappings()
         self.font_size = self.load_font_settings().get("size", 14)
         self.font_family = self.load_font_settings().get("family", "Monaco")
         self.auto_scroll_enabled = True
@@ -176,14 +178,30 @@ class SerialTerminal(QMainWindow):
         self.serial_group.setLayout(serial_group_layout)
         self.left_layout.addWidget(self.serial_group)
 
-        # --- Add pagination group ---
-        self.pagination_group = QGroupBox("Command Pages")
-        self.pagination_layout = QHBoxLayout()
-        self.pagination_group.setLayout(self.pagination_layout)
-        self.left_layout.addWidget(self.pagination_group)
-        self.pagination_group.hide()
-        # --- End of added button group ---
+        # --- Add button group for predefined commands ---
+        cmd_actions_group = QGroupBox("Command Groups")
+        cmd_actions_layout = QHBoxLayout()
+        
+        predefine_btn1 = QPushButton("1")
+        predefine_btn2 = QPushButton("2")
+        predefine_btn3 = QPushButton("3")
 
+        predefine_btn1.setToolTip("Load predefined command list 1")
+        predefine_btn2.setToolTip("Load predefined command list 2")
+        predefine_btn3.setToolTip("Load predefined command list 3")
+
+        predefine_btn1.clicked.connect(lambda: self.load_mapped_command_list(1))
+        predefine_btn2.clicked.connect(lambda: self.load_mapped_command_list(2))
+        predefine_btn3.clicked.connect(lambda: self.load_mapped_command_list(3))
+
+        cmd_actions_layout.addWidget(predefine_btn1)
+        cmd_actions_layout.addWidget(predefine_btn2)
+        cmd_actions_layout.addWidget(predefine_btn3)
+        
+        cmd_actions_group.setLayout(cmd_actions_layout)
+        self.left_layout.addWidget(cmd_actions_group)
+        # --- End of button group for predefined commands ---
+        
         self.checkboxes = []
         self.lineedits = []
         self.sendline_btns = []
@@ -258,7 +276,7 @@ class SerialTerminal(QMainWindow):
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
         # Set default YAML file as current
-        self.current_cmdlist_file = utils.USER_COMMAND_LIST
+        self.current_cmdlist_file = utils.PREDEFINED_COMMAND_LIST1
         self.load_checkbox_lineedit(self.current_cmdlist_file)
         self.sequential_btn = QPushButton("Sequential Send")
         self.sequential_btn.clicked.connect(self.sequential_send_commands)
@@ -394,7 +412,7 @@ class SerialTerminal(QMainWindow):
 
     def edit_current_command_list(self):
         """Open the currently selected predefined command list in an internal YAML editor."""
-        file_path = self.current_cmdlist_file if self.current_cmdlist_file else utils.USER_COMMAND_LIST
+        file_path = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
         if not os.path.exists(file_path):
             QMessageBox.warning(self, "File Not Found", f"File does not exist:\n{file_path}")
             return
@@ -700,7 +718,7 @@ class SerialTerminal(QMainWindow):
         """Update status bar to show current YAML file being used"""
         if self.current_cmdlist_file:
             filename = os.path.basename(self.current_cmdlist_file)
-            if self.current_cmdlist_file == utils.USER_COMMAND_LIST:
+            if self.current_cmdlist_file == utils.PREDEFINED_COMMAND_LIST1:
                 self.update_status_bar(f"Using default command list: {filename}")
                 self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
             else:
@@ -766,14 +784,14 @@ class SerialTerminal(QMainWindow):
     def auto_load_selected_commandlist_file(self):
         """Automatically load the last used YAML file on startup"""
         last_file = self.load_selected_commandlist_file()
-        if last_file and os.path.exists(last_file) and last_file != utils.USER_COMMAND_LIST:
+        if last_file and os.path.exists(last_file) and last_file != utils.PREDEFINED_COMMAND_LIST1:
             try:
                 self.load_and_validate_config_file(last_file, popup=True)
                 # print(f"Auto-loaded last YAML file: {os.path.basename(last_file)}")
             except Exception as e:
                 print(f"Could not auto-load last YAML file: {e}")
                 # Fall back to default
-                self.current_cmdlist_file = utils.USER_COMMAND_LIST
+                self.current_cmdlist_file = utils.PREDEFINED_COMMAND_LIST1
                 self.update_config_file_status()
 
     def load_command_list_from_file(self):
@@ -797,22 +815,88 @@ class SerialTerminal(QMainWindow):
             selected_files = file_dialog.selectedFiles()
             if selected_files:
                 config_file_path = selected_files[0]
-                self.load_and_validate_config_file(config_file_path, popup=True)
+                
+                # Ask user which button to assign this file to
+                items = ["1", "2", "3"]
+                item, ok = QInputDialog.getItem(self, "Assign Command List", 
+                                                "Assign this list to which button?", items, 0, False)
+                
+                if ok and item:
+                    button_number = int(item)
+                    # Update mapping
+                    self.predefined_cmd_mappings[button_number] = config_file_path
+                    # Save the new mapping
+                    self.save_predefined_cmd_mappings()
+                    # Load the file into the UI
+                    self.load_and_validate_config_file(config_file_path, popup=True)
+                    self.update_status_bar(f"Assigned {os.path.basename(config_file_path)} to button {button_number}")
 
-    def load_predefined_command_list(self, filename):
-        """Loads a predefined command list based on its number."""
-        from utils import get_user_config_path
+    def load_mapped_command_list(self, button_number):
+        """Loads the command list file mapped to the given button number."""
+        file_path = self.predefined_cmd_mappings.get(button_number)
         
-        file_path = get_user_config_path(filename)
-        
-        if os.path.exists(file_path):
+        if file_path and os.path.exists(file_path):
             self.load_and_validate_config_file(file_path, popup=False)
         else:
             QMessageBox.warning(
                 self, 
                 "File Not Found", 
-                f"Predefined command list file not found:\n{os.path.basename(file_path)}"
+                f"The command list file mapped to button {button_number} was not found:\n{file_path}"
             )
+
+    def save_predefined_cmd_mappings(self):
+        """Save the current command list mappings to settings."""
+        settings = []
+        if os.path.exists(utils.USER_SETTINGS):
+            try:
+                with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                    settings = yaml.safe_load(f) or []
+            except Exception:
+                settings = []
+
+        mapping_found = False
+        for item in settings:
+            if isinstance(item, dict) and "predefined_cmd_mappings" in item:
+                item["predefined_cmd_mappings"] = self.predefined_cmd_mappings
+                mapping_found = True
+                break
+        
+        if not mapping_found:
+            settings.append({"predefined_cmd_mappings": self.predefined_cmd_mappings})
+
+        try:
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
+                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
+        except Exception as e:
+            self.update_status_bar(f"Warning: Could not save command list mappings: {e}")
+
+    def load_predefined_cmd_mappings(self):
+        """Load command list mappings from settings or set defaults."""
+        settings = []
+        if os.path.exists(utils.USER_SETTINGS):
+            try:
+                with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                    settings = yaml.safe_load(f) or []
+            except Exception:
+                settings = []
+
+        mapping_found = False
+        for item in settings:
+            if isinstance(item, dict) and "predefined_cmd_mappings" in item:
+                self.predefined_cmd_mappings = item["predefined_cmd_mappings"]
+                # Ensure keys are integers
+                self.predefined_cmd_mappings = {int(k): v for k, v in self.predefined_cmd_mappings.items()}
+                mapping_found = True
+                break
+        
+        if not mapping_found:
+            # Set default mappings if not found
+            self.predefined_cmd_mappings = {
+                1: utils.get_user_config_path("atcmder_predefined_cmd_1.yaml"),
+                2: utils.get_user_config_path("atcmder_predefined_cmd_2.yaml"),
+                3: utils.get_user_config_path("atcmder_predefined_cmd_3.yaml"),
+            }
+            self.save_predefined_cmd_mappings()
 
     def validate_config_structure(self, data):
         """Validate YAML file structure for command list"""
@@ -869,17 +953,23 @@ class SerialTerminal(QMainWindow):
             is_valid, message = self.validate_config_structure(data)
             
             if not is_valid:
-                QMessageBox.critical(
-                    self, 
-                    "Invalid YAML File", 
-                    f"The selected YAML file has an invalid\n\nPlease select a valid command list YAML file."
-                )
+                QMessageBox.critical(self, "Invalid File", f"The file content is invalid: {message}")
                 return
-            
-            # Apply the data to UI
-            self.current_cmdlist_file = file_path  # Remember the current YAML file
+
+            # Truncate if more than LINEEDIT_MAX_NUMBER
+            if len(data) > LINEEDIT_MAX_NUMBER:
+                data = data[:LINEEDIT_MAX_NUMBER]
+                QMessageBox.warning(
+                    self,
+                    "List Truncated",
+                    f"The command list has more than {LINEEDIT_MAX_NUMBER} items.\n"
+                    f"The list has been limited to the first {LINEEDIT_MAX_NUMBER} items."
+                )
+
+            self.current_cmdlist_file = file_path
             self.apply_config_data_to_ui(data)
-            
+            self.update_config_file_status()
+
             # Show success message
             if self.first_load != True:
                 if popup:
@@ -891,12 +981,9 @@ class SerialTerminal(QMainWindow):
             else:
                 self.first_load = False
             
-            # Update status to show current YAML file
-            self.update_config_file_status()
-            
             # Save as last loaded YAML file for next startup
             self.save_selected_config_filepath(file_path)
-            
+        
         except yaml.YAMLError as e:
             QMessageBox.critical(
                 self, 
@@ -921,36 +1008,14 @@ class SerialTerminal(QMainWindow):
         self.full_command_list = sorted(data, key=lambda x: x['index'])
         self.current_page = 0
         
-        self.setup_pagination()
         self.update_command_view()
         
-        target_file = self.current_cmdlist_file if self.current_cmdlist_file else utils.USER_COMMAND_LIST
+        target_file = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
         try:
             with open(target_file, "w", encoding="utf-8") as f:
                 yaml.safe_dump(self.full_command_list, f, allow_unicode=True, sort_keys=False)
         except Exception as e:
             self.update_status_bar(f"Warning: Could not save to {os.path.basename(target_file)}: {str(e)}")
-
-    def setup_pagination(self):
-        SerialTerminal.clear_layout(self.pagination_layout)
-
-        num_pages = (len(self.full_command_list) - 1) // LINEEDIT_MAX_NUMBER + 1
-        
-        if num_pages > 1:
-            self.pagination_group.show()
-            self.page_buttons = []
-            for i in range(num_pages):
-                btn = QPushButton(str(i + 1))
-                btn.setCheckable(True)
-                btn.clicked.connect(lambda checked, page=i: self.go_to_page(page))
-                self.pagination_layout.addWidget(btn)
-                self.page_buttons.append(btn)
-            
-            # self.pagination_layout.addStretch()
-            if self.page_buttons:
-                self.page_buttons[self.current_page].setChecked(True)
-        else:
-            self.pagination_group.hide()
 
     def go_to_page(self, page_number):
         self.load_checkbox_lineedit(self.current_cmdlist_file)
@@ -1210,7 +1275,7 @@ class SerialTerminal(QMainWindow):
                     break
         
         if filename is None:
-            filename = self.current_cmdlist_file if self.current_cmdlist_file else utils.USER_COMMAND_LIST
+            filename = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
         
         try:
             with open(filename, "w", encoding="utf-8") as f:
@@ -1309,7 +1374,7 @@ class SerialTerminal(QMainWindow):
             # Load time intervals from YAML file
             time_intervals = {}
             try:
-                with open(utils.USER_COMMAND_LIST, "r", encoding="utf-8") as f:
+                with open(self.current_cmdlist_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                 if isinstance(data, list):
                     for item in data:
