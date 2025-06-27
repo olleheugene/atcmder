@@ -24,3 +24,5 @@ dist/atcmder.app/Contents/MacOS/atcmder
 dist/atcmder.app/Contents/Resources/app_icon.icns
 resources/.atcmder_settings.cfg.swp
 __pycache__/terminal_widget.cpython-310.pyc
+__pycache__/json_editor.cpython-310.pyc
+__pycache__/yaml_editor.cpython-310.pyc
