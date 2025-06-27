@@ -2,7 +2,6 @@ import os
 import serial
 import threading
 import time
-import json
 import re
 import subprocess
 from PySide6.QtWidgets import (
@@ -12,7 +11,10 @@ from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication
 from PySide6.QtCore import Signal, Qt, QEvent, QTimer
 import utils
 from terminal_widget import TerminalWidget
-from json_editor import JsonEditorDialog
+from yaml_editor import YamlEditorDialog
+import yaml
+
+LINEEDIT_MAX_NUMBER = 10  # Maximum number of line edits
 
 import serial.tools.list_ports
 def list_serial_ports():
@@ -22,6 +24,16 @@ class SerialTerminal(QMainWindow):
     serial_data_signal = Signal(str)
     sequential_complete_signal = Signal(bool, str)
     reconnect_signal = Signal()
+
+    @staticmethod
+    def clear_layout(layout):
+        if layout is not None:
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget() is not None:
+                    child.widget().deleteLater()
+                elif child.layout() is not None:
+                    SerialTerminal.clear_layout(child.layout())
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
@@ -47,7 +59,9 @@ class SerialTerminal(QMainWindow):
         self.data_buffer = ""
         self.buffer_timeout = None
         self.ansi_buffer = ""
-        self.current_json_file = None
+        self.current_cmdlist_file = None
+        self.full_command_list = []
+        self.current_page = 0
         self.font_size = self.load_font_settings().get("size", 14)
         self.font_family = self.load_font_settings().get("family", "Monaco")
         self.auto_scroll_enabled = True
@@ -114,6 +128,7 @@ class SerialTerminal(QMainWindow):
 
         self.left_widget = QWidget()
         self.left_layout = QVBoxLayout()
+        self.left_layout.setSpacing(3) 
         self.serial_group = QGroupBox("Serial Settings")
         serial_group_layout = QVBoxLayout()
         serial_group_layout.setSpacing(0)
@@ -160,10 +175,19 @@ class SerialTerminal(QMainWindow):
         serial_group_layout.addLayout(baud_btn_layout)
         self.serial_group.setLayout(serial_group_layout)
         self.left_layout.addWidget(self.serial_group)
+
+        # --- Add pagination group ---
+        self.pagination_group = QGroupBox("Command Pages")
+        self.pagination_layout = QHBoxLayout()
+        self.pagination_group.setLayout(self.pagination_layout)
+        self.left_layout.addWidget(self.pagination_group)
+        self.pagination_group.hide()
+        # --- End of added button group ---
+
         self.checkboxes = []
         self.lineedits = []
         self.sendline_btns = []
-        for i in range(10):
+        for i in range(LINEEDIT_MAX_NUMBER):
             row_widget = QWidget()
             row_layout = QHBoxLayout()
             checkbox = QCheckBox()
@@ -173,8 +197,8 @@ class SerialTerminal(QMainWindow):
             def make_send_handler(index):
                 return lambda: self.send_lineedit_command(index)
             send_btn.clicked.connect(make_send_handler(i))
-            checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit_to_json())
-            lineedit.textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit_to_json())
+            checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
+            lineedit.textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit())
             row_layout.addWidget(checkbox)
             row_layout.addWidget(lineedit)
             row_layout.addWidget(send_btn)
@@ -195,7 +219,6 @@ class SerialTerminal(QMainWindow):
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
         self.right_layout = QVBoxLayout()
-        self.right_layout.setContentsMargins(0, 0, 8, 12)
         self.top_right_btn_layout = QHBoxLayout()
         self.top_right_btn_layout.addStretch()
         self.top_right_btn_layout.addWidget(self.clear_btn)
@@ -234,16 +257,16 @@ class SerialTerminal(QMainWindow):
         self.left_panel_visible = True
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
-        # Set default JSON file as current
-        self.current_json_file = utils.USER_COMMAND_LIST
-        self.load_checkbox_lineedit_from_json(self.current_json_file)
+        # Set default YAML file as current
+        self.current_cmdlist_file = utils.USER_COMMAND_LIST
+        self.load_checkbox_lineedit(self.current_cmdlist_file)
         self.sequential_btn = QPushButton("Sequential Send")
         self.sequential_btn.clicked.connect(self.sequential_send_commands)
         self.left_layout.addWidget(self.sequential_btn)
         self.refresh_serial_ports(auto_connect=True)
         self.terminal_widget.setFocus()
         self.auto_load_selected_commandlist_file()
-        self.update_json_file_status()
+        self.update_config_file_status()
         self.last_ports = set(list_serial_ports())
         self._display_buffer = ""
 
@@ -370,12 +393,12 @@ class SerialTerminal(QMainWindow):
         return super().eventFilter(obj, event)
 
     def edit_current_command_list(self):
-        """Open the currently selected predefined command list in an internal JSON editor."""
-        file_path = self.current_json_file if self.current_json_file else utils.USER_COMMAND_LIST
+        """Open the currently selected predefined command list in an internal YAML editor."""
+        file_path = self.current_cmdlist_file if self.current_cmdlist_file else utils.USER_COMMAND_LIST
         if not os.path.exists(file_path):
             QMessageBox.warning(self, "File Not Found", f"File does not exist:\n{file_path}")
             return
-        dlg = JsonEditorDialog(file_path, self)
+        dlg = YamlEditorDialog(file_path, self)
         dlg.exec()
 
     def show_shortcut_list(self):
@@ -609,10 +632,10 @@ class SerialTerminal(QMainWindow):
         pass
 
     def save_recent_ports(self):
-        # Save recent port list
+        # Save recent port list (YAML)
         try:
             with open(utils.USER_PORT_LIST, "w", encoding="utf-8") as f:
-                json.dump(self.recent_ports, f, indent=2)
+                yaml.safe_dump(self.recent_ports, f, allow_unicode=True, sort_keys=False)
         except Exception:
             pass
 
@@ -624,23 +647,11 @@ class SerialTerminal(QMainWindow):
         super().closeEvent(event)
 
     def load_recent_ports(self):
-        # Load recent port list from USER_PORT_LIST
+        # Load recent port list from USER_PORT_LIST (YAML)
         try:
             with open(utils.USER_PORT_LIST, "r", encoding="utf-8") as f:
-                ports = json.load(f)
-                # Index migration and sorting
-                migrated = False
-                for idx, entry in enumerate(ports):
-                    if 'index' not in entry:
-                        entry['index'] = idx
-                        migrated = True
-                ports.sort(key=lambda x: x.get('index', 0))
-                for i, entry in enumerate(ports):
-                    entry['index'] = i
-                if migrated:
-                    with open(utils.USER_PORT_LIST, "w", encoding="utf-8") as fw:
-                        json.dump(ports, fw, indent=2)
-                return ports
+                ports = yaml.safe_load(f)
+            return ports if ports else []
         except Exception:
             return []
 
@@ -664,7 +675,7 @@ class SerialTerminal(QMainWindow):
             entry['index'] = i
         try:
             with open(utils.USER_PORT_LIST, "w", encoding="utf-8") as f:
-                json.dump(ports, f, indent=2)
+                yaml.safe_dump(ports, f, allow_unicode=True, sort_keys=False)
         except Exception:
             pass
 
@@ -685,11 +696,11 @@ class SerialTerminal(QMainWindow):
         
         self.status.showMessage(connection_status)
 
-    def update_json_file_status(self):
-        """Update status bar to show current JSON file being used"""
-        if self.current_json_file:
-            filename = os.path.basename(self.current_json_file)
-            if self.current_json_file == utils.USER_COMMAND_LIST:
+    def update_config_file_status(self):
+        """Update status bar to show current YAML file being used"""
+        if self.current_cmdlist_file:
+            filename = os.path.basename(self.current_cmdlist_file)
+            if self.current_cmdlist_file == utils.USER_COMMAND_LIST:
                 self.update_status_bar(f"Using default command list: {filename}")
                 self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
             else:
@@ -702,74 +713,74 @@ class SerialTerminal(QMainWindow):
     def show_about_dialog(self):
         QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + utils.APP_VERSION + "\n\nBy OllehEugene")
 
-    def save_selected_json_filepath(self, file_path):
-        """Save the last loaded JSON file path to settings"""
+    def save_selected_config_filepath(self, file_path):
+        """Save the last loaded YAML file path to settings"""
         try:
             # Load existing settings first
             settings = []
             if os.path.exists(utils.USER_SETTINGS):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = json.load(f)
+                        settings = yaml.safe_load(f)
                     if not isinstance(settings, list):
                         settings = []
                 except Exception:
                     settings = []
             
             # Find existing selected_commandlist_file object and update it
-            json_file_found = False
+            config_file_found = False
             for item in settings:
-                if isinstance(item, dict) and "last_json_file" in item:
-                    item["last_json_file"] = file_path
-                    json_file_found = True
+                if isinstance(item, dict) and "last_cmdlist_file" in item:
+                    item["last_cmdlist_file"] = file_path
+                    config_file_found = True
                     break
             
-            # If no last_json_file object found, add new one
-            if not json_file_found:
-                json_file_obj = {
-                    "last_json_file": file_path
+            # If no last_cmdlist_file object found, add new one
+            if not config_file_found:
+                config_file_obj = {
+                    "last_cmdlist_file": file_path
                 }
-                settings.append(json_file_obj)
+                settings.append(config_file_obj)
             
             # Save back to file
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
+                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
         except Exception as e:
-            print(f"Warning: Could not save last JSON file setting: {e}")
+            print(f"Warning: Could not save last YAML file setting: {e}")
 
     def load_selected_commandlist_file(self):
-        """Load the last used JSON file path from settings"""
+        """Load the last used YAML file path from settings"""
         try:
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                settings = json.load(f)
+                settings = yaml.safe_load(f)
                 
-                # Find last_json_file in the list
+                # Find last_cmdlist_file in the list
                 for item in settings:
-                    if isinstance(item, dict) and "last_json_file" in item:
-                        return item["last_json_file"]
+                    if isinstance(item, dict) and "last_cmdlist_file" in item:
+                        return item["last_cmdlist_file"]
                 
                 return None
         except Exception:
             return None
 
     def auto_load_selected_commandlist_file(self):
-        """Automatically load the last used JSON file on startup"""
+        """Automatically load the last used YAML file on startup"""
         last_file = self.load_selected_commandlist_file()
         if last_file and os.path.exists(last_file) and last_file != utils.USER_COMMAND_LIST:
             try:
-                self.load_and_validate_json_file(last_file)
-                # print(f"Auto-loaded last JSON file: {os.path.basename(last_file)}")
+                self.load_and_validate_config_file(last_file, popup=True)
+                # print(f"Auto-loaded last YAML file: {os.path.basename(last_file)}")
             except Exception as e:
-                print(f"Could not auto-load last JSON file: {e}")
+                print(f"Could not auto-load last YAML file: {e}")
                 # Fall back to default
-                self.current_json_file = utils.USER_COMMAND_LIST
-                self.update_json_file_status()
+                self.current_cmdlist_file = utils.USER_COMMAND_LIST
+                self.update_config_file_status()
 
     def load_command_list_from_file(self):
-        """Open file dialog to load command list from JSON file"""
+        """Open file dialog to load command list from YAML file"""
         file_dialog = QFileDialog(self)
         file_dialog.setWindowTitle("Load Command List")
-        file_dialog.setNameFilter("JSON files (*.json)")
+        file_dialog.setNameFilter("YAML files (*.yaml)")
         file_dialog.setFileMode(QFileDialog.ExistingFile)
         file_dialog.setAcceptMode(QFileDialog.AcceptOpen)
         
@@ -785,13 +796,28 @@ class SerialTerminal(QMainWindow):
         if file_dialog.exec():
             selected_files = file_dialog.selectedFiles()
             if selected_files:
-                json_file_path = selected_files[0]
-                self.load_and_validate_json_file(json_file_path)
+                config_file_path = selected_files[0]
+                self.load_and_validate_config_file(config_file_path, popup=True)
 
-    def validate_json_structure(self, data):
-        """Validate JSON file structure for command list"""
+    def load_predefined_command_list(self, filename):
+        """Loads a predefined command list based on its number."""
+        from utils import get_user_config_path
+        
+        file_path = get_user_config_path(filename)
+        
+        if os.path.exists(file_path):
+            self.load_and_validate_config_file(file_path, popup=False)
+        else:
+            QMessageBox.warning(
+                self, 
+                "File Not Found", 
+                f"Predefined command list file not found:\n{os.path.basename(file_path)}"
+            )
+
+    def validate_config_structure(self, data):
+        """Validate YAML file structure for command list"""
         if not isinstance(data, list):
-            return False, "JSON file must contain an array of command objects"
+            return False, "YAML file must contain an array of command objects"
         
         required_keys = ["index", "checked", "title", "time"]
         required_title_keys = ["text", "disabled"]
@@ -831,50 +857,51 @@ class SerialTerminal(QMainWindow):
             if not isinstance(item["time"], (int, float)) or item["time"] < 0:
                 return False, f"Item {i} has invalid time: must be a non-negative number"
         
-        return True, "Valid JSON structure"
+        return True, "Valid YAML structure"
 
-    def load_and_validate_json_file(self, file_path):
-        """Load and validate JSON file, then apply to command list"""
+    def load_and_validate_config_file(self, file_path, popup=True):
+        """Load and validate YAML file, then apply to command list"""
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data = yaml.safe_load(f)
             
             # Validate structure
-            is_valid, message = self.validate_json_structure(data)
+            is_valid, message = self.validate_config_structure(data)
             
             if not is_valid:
                 QMessageBox.critical(
                     self, 
-                    "Invalid JSON File", 
-                    f"The selected JSON file has an invalid\n\nPlease select a valid command list JSON file."
+                    "Invalid YAML File", 
+                    f"The selected YAML file has an invalid\n\nPlease select a valid command list YAML file."
                 )
                 return
             
             # Apply the data to UI
-            self.current_json_file = file_path  # Remember the current JSON file
-            self.apply_json_data_to_ui(data)
+            self.current_cmdlist_file = file_path  # Remember the current YAML file
+            self.apply_config_data_to_ui(data)
             
             # Show success message
             if self.first_load != True:
-                QMessageBox.information(
-                    self, 
-                    "Success", 
-                    f"Command list loaded successfully"
-                )
+                if popup:
+                    QMessageBox.information(
+                        self, 
+                        "Success", 
+                        f"Command list loaded successfully"
+                    )
             else:
                 self.first_load = False
             
-            # Update status to show current JSON file
-            self.update_json_file_status()
+            # Update status to show current YAML file
+            self.update_config_file_status()
             
-            # Save as last loaded JSON file for next startup
-            self.save_selected_json_filepath(file_path)
+            # Save as last loaded YAML file for next startup
+            self.save_selected_config_filepath(file_path)
             
-        except json.JSONDecodeError as e:
+        except yaml.YAMLError as e:
             QMessageBox.critical(
                 self, 
-                "JSON Parse Error", 
-                f"The selected file is not a valid\n\nPlease select a valid JSON file."
+                "YAML Parse Error", 
+                f"The selected file is not a valid\n\nPlease select a valid YAML file."
             )
         except FileNotFoundError:
             QMessageBox.critical(
@@ -889,40 +916,98 @@ class SerialTerminal(QMainWindow):
                 f"An error occurred while loading the file:\n\n{str(e)}"
             )
 
-    def apply_json_data_to_ui(self, data):
-        """Apply loaded JSON data to the UI elements"""
-        # Clear existing data first
-        for i in range(10):
-            self.checkboxes[i].setChecked(False)
-            self.lineedits[i].setText("")
+    def apply_config_data_to_ui(self, data):
+        """Apply loaded YAML data to the UI elements and setup pagination."""
+        self.full_command_list = sorted(data, key=lambda x: x['index'])
+        self.current_page = 0
         
-        # Apply new data
-        for item in data:
-            index = item["index"]
-            if 0 <= index < 10:  # Only apply to valid indices
-                self.checkboxes[index].setChecked(item["checked"])
-                self.lineedits[index].setText(item["title"]["text"])
-                # Note: we don't apply the disabled state to UI, only store it
-                disabled = item.get("title", {}).get("disabled", False)
-                self.checkboxes[index].setDisabled(disabled)
-                self.lineedits[index].setDisabled(disabled)
-                self.sendline_btns[index].setDisabled(disabled)
-                # If disabled, hide checkbox/button only, lineedit always visible
-                self.checkboxes[index].setVisible(not disabled)
-                self.sendline_btns[index].setVisible(not disabled)
-                if disabled:
-                    self.lineedits[index].setAlignment(Qt.AlignCenter)
-                else:
-                    self.lineedits[index].setAlignment(Qt.AlignLeft)
-
+        self.setup_pagination()
+        self.update_command_view()
         
-        # Save the loaded data to the currently selected JSON file (if any) or default file
-        target_file = self.current_json_file if self.current_json_file else utils.USER_COMMAND_LIST
+        target_file = self.current_cmdlist_file if self.current_cmdlist_file else utils.USER_COMMAND_LIST
         try:
             with open(target_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
+                yaml.safe_dump(self.full_command_list, f, allow_unicode=True, sort_keys=False)
         except Exception as e:
             self.update_status_bar(f"Warning: Could not save to {os.path.basename(target_file)}: {str(e)}")
+
+    def setup_pagination(self):
+        SerialTerminal.clear_layout(self.pagination_layout)
+
+        num_pages = (len(self.full_command_list) - 1) // LINEEDIT_MAX_NUMBER + 1
+        
+        if num_pages > 1:
+            self.pagination_group.show()
+            self.page_buttons = []
+            for i in range(num_pages):
+                btn = QPushButton(str(i + 1))
+                btn.setCheckable(True)
+                btn.clicked.connect(lambda checked, page=i: self.go_to_page(page))
+                self.pagination_layout.addWidget(btn)
+                self.page_buttons.append(btn)
+            
+            # self.pagination_layout.addStretch()
+            if self.page_buttons:
+                self.page_buttons[self.current_page].setChecked(True)
+        else:
+            self.pagination_group.hide()
+
+    def go_to_page(self, page_number):
+        self.load_checkbox_lineedit(self.current_cmdlist_file)
+        if self.current_page == page_number:
+            self.page_buttons[page_number].setChecked(True)
+            return
+
+        self.page_buttons[self.current_page].setChecked(False)
+        self.current_page = page_number
+        self.page_buttons[self.current_page].setChecked(True)
+        
+        self.update_command_view()
+
+    def update_command_view(self):
+        start_index_in_list = self.current_page * LINEEDIT_MAX_NUMBER
+        end_index_in_list = start_index_in_list + LINEEDIT_MAX_NUMBER
+        commands_for_page = self.full_command_list[start_index_in_list:end_index_in_list]
+
+        for i in range(LINEEDIT_MAX_NUMBER):
+            self.checkboxes[i].stateChanged.disconnect()
+            self.lineedits[i].textChanged.disconnect()
+            self.checkboxes[i].setVisible(False)
+            self.lineedits[i].setVisible(False)
+            self.sendline_btns[i].setVisible(False)
+            self.lineedits[i].setText("")
+            self.checkboxes[i].setChecked(False)
+            self.checkboxes[i].stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
+            self.lineedits[i].textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit())
+
+        for item in commands_for_page:
+
+            original_index = item["index"]
+            ui_index = original_index % LINEEDIT_MAX_NUMBER
+            self.checkboxes[ui_index].stateChanged.disconnect()
+            self.lineedits[ui_index].textChanged.disconnect()
+
+            self.checkboxes[ui_index].setVisible(True)
+            self.lineedits[ui_index].setVisible(True)
+            self.sendline_btns[ui_index].setVisible(True)
+
+            self.checkboxes[ui_index].setChecked(item["checked"])
+            self.lineedits[ui_index].setText(item["title"]["text"])
+            
+            disabled = item.get("title", {}).get("disabled", False)
+            self.checkboxes[ui_index].setDisabled(disabled)
+            self.lineedits[ui_index].setDisabled(disabled)
+            self.sendline_btns[ui_index].setDisabled(disabled)
+            
+            self.checkboxes[ui_index].setVisible(not disabled)
+            self.sendline_btns[ui_index].setVisible(not disabled)
+            self.checkboxes[ui_index].stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
+            self.lineedits[ui_index].textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit())
+
+            if disabled:
+                self.lineedits[ui_index].setAlignment(Qt.AlignCenter)
+            else:
+                self.lineedits[ui_index].setAlignment(Qt.AlignLeft)
 
     def apply_theme(self, theme_name):
         if theme_name == "default":
@@ -1110,100 +1195,38 @@ class SerialTerminal(QMainWindow):
         elif not command:
             self.update_status_bar("Error: No command to send")
 
-    def save_checkbox_lineedit_to_json(self, filename=None):
-        """Save checkbox/lineedit data to JSON file.
-        If filename is None, saves to currently selected JSON file or default file."""
-        if filename is None:
-            filename = self.current_json_file if self.current_json_file else utils.USER_COMMAND_LIST
-            
-        data = []
-        # Read JSON first to preserve existing time/disabled values
-        old_map = {}
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                old_data = json.load(f)
-            if isinstance(old_data, list):
-                for item in old_data:
-                    idx = item.get("index")
-                    if idx is not None:
-                        old_map[idx] = {
-                            "time": item.get("time", 0.5),
-                            "disabled": item.get("title", {}).get("disabled", False)
-                        }
-        except Exception:
-            pass
-        for i in range(10):
-            checkbox = self.checkboxes[i]
-            lineedit = self.lineedits[i]
-            prev = old_map.get(i, {})
-            item = {
-                "index": i,
-                "checked": checkbox.isChecked(),
-                "title": {
-                    "text": lineedit.text(),
-                    "disabled": prev.get("disabled", False)
-                },
-                "time": prev.get("time", 0.5)
-            }
-            data.append(item)
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+    def save_checkbox_lineedit(self, filename=None):
+        # Update the in-memory list first
+        for i in range(LINEEDIT_MAX_NUMBER):
+            if not self.lineedits[i].isVisible():
+                continue
 
-    def load_checkbox_lineedit_from_json(self, filename):
+            original_index = self.current_page * LINEEDIT_MAX_NUMBER + i
+            
+            for item in self.full_command_list:
+                if item['index'] == original_index:
+                    item['checked'] = self.checkboxes[i].isChecked()
+                    item['title']['text'] = self.lineedits[i].text()
+                    break
+        
+        if filename is None:
+            filename = self.current_cmdlist_file if self.current_cmdlist_file else utils.USER_COMMAND_LIST
+        
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                yaml.safe_dump(self.full_command_list, f, allow_unicode=True, sort_keys=False)
+        except Exception as e:
+            self.update_status_bar(f"Warning: Could not save to {os.path.basename(filename)}: {str(e)}")
+
+    def load_checkbox_lineedit(self, filename):
+        # YAML 버전
         try:
             with open(filename, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # List structure (new/normal)
-                if isinstance(data, list):
-                    for item in data:
-                        idx = item.get("index")
-                        if idx is not None and 0 <= idx < len(self.checkboxes):
-                            checked = bool(item.get("checked", False))
-                            text = item.get("title", {}).get("text", "")
-                            disabled = item.get("title", {}).get("disabled", False)
-                            self.checkboxes[idx].setChecked(checked)
-                            self.lineedits[idx].setText(text)
-                            self.checkboxes[idx].setDisabled(disabled)
-                            self.lineedits[idx].setDisabled(disabled)
-                            self.sendline_btns[idx].setDisabled(disabled)
-                            # If disabled, hide checkbox/button only, lineedit always visible
-                            self.checkboxes[idx].setVisible(not disabled)
-                            self.sendline_btns[idx].setVisible(not disabled)
-                            self.lineedits[idx].setVisible(True)
-                            # Apply alignment dynamically
-                            if disabled:
-                                self.lineedits[idx].setAlignment(Qt.AlignCenter)
-                            else:
-                                self.lineedits[idx].setAlignment(Qt.AlignLeft)
-                # Dictionary structure (old/temporary)
-                elif isinstance(data, dict):
-                    for i in range(10):
-                        checkbox = self.checkboxes[i]
-                        lineedit = self.lineedits[i]
-                        send_btn = self.sendline_btns[i]
-                        command_key = f"command_{i+1}"
-                        if command_key in data:
-                            lineedit.setText(data[command_key])
-                            checkbox.setChecked(True)
-                            checkbox.setDisabled(False)
-                            lineedit.setDisabled(False)
-                            send_btn.setDisabled(False)
-                            checkbox.setVisible(True)
-                            lineedit.setVisible(True)
-                            send_btn.setVisible(True)
-                            lineedit.setAlignment(Qt.AlignLeft)
-                        else:
-                            lineedit.clear()
-                            checkbox.setChecked(False)
-                            checkbox.setDisabled(False)
-                            lineedit.setDisabled(False)
-                            send_btn.setDisabled(False)
-                            checkbox.setVisible(True)
-                            lineedit.setVisible(True)
-                            send_btn.setVisible(True)
-                            lineedit.setAlignment(Qt.AlignLeft)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+                data = yaml.safe_load(f)
+        except Exception:
+            data = []
+        # ...기존 UI 반영 코드...
+        self.apply_config_data_to_ui(data)
 
     def read_serial_data(self):
         """Thread function to read serial data"""
@@ -1283,11 +1306,11 @@ class SerialTerminal(QMainWindow):
             # Collect all commands to send with their time intervals
             commands_to_send = []
             
-            # Load time intervals from JSON file
+            # Load time intervals from YAML file
             time_intervals = {}
             try:
                 with open(utils.USER_COMMAND_LIST, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                    data = yaml.safe_load(f)
                 if isinstance(data, list):
                     for item in data:
                         idx = item.get("index")
@@ -1296,7 +1319,7 @@ class SerialTerminal(QMainWindow):
             except Exception:
                 pass
             
-            for i in range(10):
+            for i in range(LINEEDIT_MAX_NUMBER):
                 lineedit = self.lineedits[i]
                 checkbox = self.checkboxes[i]
                 if lineedit.text() and checkbox.isChecked():
@@ -1382,8 +1405,8 @@ class SerialTerminal(QMainWindow):
             if os.path.exists(utils.USER_SETTINGS):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        user_settings_file = json.load(f)
-                        # Find last_json_file in the list
+                        user_settings_file = yaml.safe_load(f)
+                        # Find last_cmdlist_file in the list
                         for item in user_settings_file:
                             if isinstance(item, dict) and "history_settings" in item:
                                 return item["history_settings"]
@@ -1410,7 +1433,7 @@ class SerialTerminal(QMainWindow):
             if os.path.exists(utils.USER_SETTINGS):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = json.load(f)
+                        settings = yaml.safe_load(f)
                     if not isinstance(settings, list):
                         settings = []
                 except Exception:
@@ -1437,7 +1460,7 @@ class SerialTerminal(QMainWindow):
             
             # Save back to file
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
+                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
         except Exception as e:
             print(f"Warning: Could not save theme settings: {e}")
 
@@ -1456,7 +1479,7 @@ class SerialTerminal(QMainWindow):
         font_info = {}
         try:
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                settings = json.load(f)
+                settings = yaml.safe_load(f)
                 
                 # Find font object in the list
                 for item in settings:
@@ -1479,7 +1502,7 @@ class SerialTerminal(QMainWindow):
         """Load th eme settings from file or return default"""
         try:
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                settings = json.load(f)
+                settings = yaml.safe_load(f)
 
                 for item in settings:
                     if isinstance(item, dict) and "theme" in item:
@@ -1496,7 +1519,7 @@ class SerialTerminal(QMainWindow):
             if os.path.exists(utils.USER_SETTINGS):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = json.load(f)
+                        settings = yaml.safe_load(f)
                     if not isinstance(settings, list):
                         settings = []
                 except Exception:
@@ -1519,7 +1542,7 @@ class SerialTerminal(QMainWindow):
             
             # Save back to file
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
+                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
         except Exception as e:
             print(f"Warning: Could not save theme settings: {e}")
 
@@ -1531,7 +1554,7 @@ class SerialTerminal(QMainWindow):
             if os.path.exists(utils.USER_SETTINGS):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = json.load(f)
+                        settings = yaml.safe_load(f)
                     if not isinstance(settings, list):
                         settings = []
                 except Exception:
@@ -1559,7 +1582,7 @@ class SerialTerminal(QMainWindow):
             
             # Save back to file
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
+                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
         except Exception as e:
             print(f"Warning: Could not save font settings: {e}")
 

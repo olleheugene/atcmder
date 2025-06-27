@@ -1,6 +1,6 @@
 import sys
 import os
-import json
+import yaml
 import re
 import serial.tools.list_ports
 import shutil
@@ -15,11 +15,11 @@ DARK_CSS_NAME               = "dark"
 RESOURCES_DIR               = "resources"
 
 APP_VERSION                 = "1.3.0"
-COMMAND_LIST_FILE           = "atcmder_user_cmdlist.json"
-COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.json"
-COMMANDS_PREDEFINED_FILE2   = "atcmder_predefined_cmd_2.json"
-PORTS_FILE                  = "atcmder_ports.cfg"
-SETTINGS_FILE               = "atcmder_settings.cfg"
+COMMAND_LIST_FILE           = "atcmder_user_cmdlist.yaml"
+COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.yaml"
+COMMANDS_PREDEFINED_FILE2   = "atcmder_predefined_cmd_2.yaml"
+PORTS_FILE                  = "atcmder_ports.yaml"
+SETTINGS_FILE               = "atcmder_settings.yaml"
 
 def get_user_config_path(filename):
     if sys.platform.startswith("win"):
@@ -51,7 +51,7 @@ def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
 
 def load_checkbox_lineedit_config(config_file_name=COMMAND_LIST_FILE):
-    json_path = get_user_config_path(config_file_name)
+    yaml_path = get_user_config_path(config_file_name)
     default_data = []
     # Default data generation logic (should be dynamically generated based on number of checkboxes, assuming 10 here for example)
     # In practice, should get UI element count from SerialTerminal class
@@ -64,34 +64,34 @@ def load_checkbox_lineedit_config(config_file_name=COMMAND_LIST_FILE):
             "title": {"text": "", "checked": False}
         })
 
-    if not os.path.exists(json_path):
+    if not os.path.exists(yaml_path):
         try:
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(default_data, f, ensure_ascii=False, indent=2)
-            print(f"Default checkbox/lineedit config created: {json_path}")
+            with open(yaml_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(default_data, f, ensure_ascii=False, indent=2)
+            print(f"Default checkbox/lineedit config created: {yaml_path}")
             return default_data
         except Exception as e:
             print(f"Error creating default checkbox/lineedit config: {e}")
             return default_data
 
     try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        print(f"JSON decode error in {json_path}. Creating default config.")
-        os.remove(json_path)
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            return yaml.load(f)
+    except yaml.YAMLError:
+        print(f"YAML decode error in {yaml_path}. Creating default config.")
+        os.remove(yaml_path)
         return load_checkbox_lineedit_config(config_file_name) # Recursive call to generate defaults
     except Exception as e:
-        print(f"Error loading checkbox/lineedit config from {json_path}: {e}")
+        print(f"Error loading checkbox/lineedit config from {yaml_path}: {e}")
         return default_data
 
 def save_checkbox_lineedit_config(data, config_file_name=COMMAND_LIST_FILE):
-    json_path = get_user_config_path(config_file_name)
+    yaml_path = get_user_config_path(config_file_name)
     try:
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"Error saving checkbox/lineedit config to {json_path}: {e}")
+        print(f"Error saving checkbox/lineedit config to {yaml_path}: {e}")
 
 def get_app_data_folder():
     """Return the path to the app's data folder (cross-platform)"""

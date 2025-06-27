@@ -1,0 +1,70 @@
+#index    : Index of the command in the list
+#checked  : Whether the command is checked. 
+#           "true" means the command will be executed by sequential execution.
+#           "false" means the command will not be executed.
+#text     : Title of the command  
+#disabled : This will be used to disable the input field.
+#           "true" means the input field is disabled and the command will not be executed.
+#           "false" means the input field is enabled and the command will be executed.
+#time     : Wait time after command execution (unit is seconds)
+#           If the "disabled" field is true, this will be ignored and the next command will be executed immediately
+- index: 0            
+  checked: true       
+  title:              
+    text: ""          
+    disabled: false   
+  time: 5.0           
+- index: 1
+  checked: true
+  title:
+    text: ""
+    disabled: false
+  time: 2.0
+- index: 2
+  checked: true
+  title:
+    text: ""
+    disabled: false
+  time: 0.5
+- index: 3
+  checked: true
+  title:
+    text: ""
+    disabled: false
+  time: 0.5
+- index: 4
+  checked: false
+  title:
+    text: ""
+    disabled: false
+  time: 0.5
+- index: 5
+  checked: false
+  title:
+    text: ""
+    disabled: false
+  time: 0.5
+- index: 6
+  checked: false
+  title:
+    text: ""
+    disabled: false
+  time: 0.5
+- index: 7
+  checked: false
+  title:
+    text: ""
+    disabled: false
+  time: 0.5
+- index: 8
+  checked: false
+  title:
+    text: ""
+    disabled: false
+  time: 0.5
+- index: 9
+  checked: false
+  title:
+    text: ""
+    disabled: false
+  time: 0.5

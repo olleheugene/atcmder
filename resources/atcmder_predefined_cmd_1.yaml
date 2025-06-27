@@ -1,0 +1,60 @@
+- index: 0    # The first command in the list will be used as the title
+  checked: false
+  title:
+    text: "2.4GHz RADIO TEST Commands"
+    disabled: true
+  time: 5.0
+- index: 1 
+  checked: true
+  title:
+    text: "data_rate ble_1Mbitdnl"
+    disabled: false
+  time: 0.5
+- index: 2
+  checked: true
+  title:
+    text: "output_power pos4dBm"
+    disabled: false
+  time: 0.5
+- index: 3
+  checked: true
+  title:
+    text: "start_channel 2"
+    disabled: false
+  time: 0.5
+- index: 4
+  checked: false
+  title:
+    text: "start_duty_cycle_modulated_tx 90"
+    disabled: false
+  time: 0.5
+- index: 5
+  checked: false
+  title:
+    text: "trasnmit_pattern pattern_11110000"
+    disabled: false
+  time: 0.5
+- index: 6
+  checked: false
+  title:
+    text: "cancel"
+    disabled: false
+  time: 0.5
+- index: 7
+  checked: false
+  title:
+    text: "start_tx_carrier"
+    disabled: false
+  time: 0.5
+- index: 8
+  checked: false
+  title:
+    text: "start_rx"
+    disabled: false
+  time: 0.5
+- index: 9
+  checked: false
+  title:
+    text: "print_rx"
+    disabled: false
+  time: 0.5

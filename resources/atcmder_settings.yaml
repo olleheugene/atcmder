@@ -1,0 +1,31 @@
+- font:
+    name: Monaco  # Font naeme
+    size: 11      # Font size in points
+    bold: false   # Not available at this moment
+- last_cmdlist_file: "/Users/eugeneyu/Library/Application Support/atcmder/atcmder_predefined_cmd_1.yaml" # Last used predefined command list file
+- theme: default
+  background_color: "#000000"
+  foreground_color: "#FFFFFF"
+- history_settings:
+    max_count: 50
+    save_on_exit: true
+    history:
+      - help
+      - shell
+      - retval
+      - AT+COPS=1,2,"24407"
+      - -ㅗㄷㅣㅔ
+      - rem
+      - ㅗㄷㅣㅔ
+      - "\\"
+      - "0"
+      - AT+CIMI
+      - AT%XICCID
+      - AT+CFUN=1
+      - start_duty_cycle_modulated_tx 90
+      - start_channel 2
+      - output_power pos4dBm
+      - data_rate ble_1Mbit
+      - at
+      - atz
+      - test
