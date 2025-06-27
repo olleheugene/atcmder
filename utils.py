@@ -15,9 +15,9 @@ DARK_CSS_NAME               = "dark"
 RESOURCES_DIR               = "resources"
 
 APP_VERSION                 = "1.4.0"
-COMMAND_LIST_FILE           = "atcmder_user_cmdlist.yaml"
 COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.yaml"
 COMMANDS_PREDEFINED_FILE2   = "atcmder_predefined_cmd_2.yaml"
+COMMANDS_PREDEFINED_FILE3   = "atcmder_predefined_cmd_3.yaml"
 PORTS_FILE                  = "atcmder_ports.yaml"
 SETTINGS_FILE               = "atcmder_settings.yaml"
 
@@ -31,13 +31,12 @@ def get_user_config_path(filename):
     os.makedirs(config_dir, exist_ok=True)
     return os.path.join(config_dir, filename)
 
-USER_COMMAND_LIST           = get_user_config_path(COMMAND_LIST_FILE)
 USER_PORT_LIST              = get_user_config_path(PORTS_FILE)
 USER_SETTINGS               = get_user_config_path(SETTINGS_FILE)
 
 PREDEFINED_COMMAND_LIST1    = get_user_config_path(COMMANDS_PREDEFINED_FILE1)
 PREDEFINED_COMMAND_LIST2    = get_user_config_path(COMMANDS_PREDEFINED_FILE2)
-
+PREDEFINED_COMMAND_LIST3    = get_user_config_path(COMMANDS_PREDEFINED_FILE3)
 
 def get_resources(resource_file):
     if hasattr(sys, '_MEIPASS'):
@@ -50,7 +49,7 @@ def get_resources(resource_file):
 def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
 
-def load_checkbox_lineedit_config(config_file_name=COMMAND_LIST_FILE):
+def load_checkbox_lineedit_config(config_file_name=COMMANDS_PREDEFINED_FILE1):
     yaml_path = get_user_config_path(config_file_name)
     default_data = []
     # Default data generation logic (should be dynamically generated based on number of checkboxes, assuming 10 here for example)
@@ -85,7 +84,7 @@ def load_checkbox_lineedit_config(config_file_name=COMMAND_LIST_FILE):
         print(f"Error loading checkbox/lineedit config from {yaml_path}: {e}")
         return default_data
 
-def save_checkbox_lineedit_config(data, config_file_name=COMMAND_LIST_FILE):
+def save_checkbox_lineedit_config(data, config_file_name=COMMANDS_PREDEFINED_FILE1):
     yaml_path = get_user_config_path(config_file_name)
     try:
         with open(yaml_path, "w", encoding="utf-8") as f:
@@ -279,8 +278,6 @@ def process_ansi_spacing(data: str) -> str:
     return data
 
 def prepare_default_files():
-    if not os.path.exists(USER_COMMAND_LIST):
-        shutil.copy(get_resources(COMMAND_LIST_FILE), USER_COMMAND_LIST)
     if not os.path.exists(USER_PORT_LIST):
         shutil.copy(get_resources(PORTS_FILE), USER_PORT_LIST)
     if not os.path.exists(USER_SETTINGS):
@@ -289,3 +286,17 @@ def prepare_default_files():
         shutil.copy(get_resources(COMMANDS_PREDEFINED_FILE1), PREDEFINED_COMMAND_LIST1)
     if not os.path.exists(PREDEFINED_COMMAND_LIST2):
         shutil.copy(get_resources(COMMANDS_PREDEFINED_FILE2), PREDEFINED_COMMAND_LIST2)
+    if not os.path.exists(PREDEFINED_COMMAND_LIST3):
+        shutil.copy(get_resources(COMMANDS_PREDEFINED_FILE3), PREDEFINED_COMMAND_LIST3)
+
+    # Create predefined command list files if they don't exist
+    for i in range(1, 4):
+        predefined_path = get_user_config_path(f"atcmder_predefined_cmd_{i}.yaml")
+        if not os.path.exists(predefined_path):
+            with open(predefined_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump([], f)
+
+    # Create user port list if it doesn't exist
+    if not os.path.exists(USER_PORT_LIST):
+        with open(USER_PORT_LIST, "w", encoding="utf-8") as f:
+            yaml.safe_dump([], f)
