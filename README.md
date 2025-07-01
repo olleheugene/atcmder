@@ -24,3 +24,8 @@ For more detailed information about the supported features, please refer to the 
 
 
 ![main](./readme/introduction.gif)
+
+
+> Note: When using it on macOS, you need to allow it in the Security & Privacy settings in order to use it
+
+![image](https://github.com/user-attachments/assets/a34ed5e9-bc76-4599-a1ab-97e2a68b3ed0)
