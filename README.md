@@ -4,8 +4,6 @@ This program is designed to make it easier to control devices via serial communi
 
 For more detailed information about the supported features, please refer to the description below.
 
-
-
 **Support Features**
 
 1. ANSI color scheme for enhanced terminal readability
@@ -22,10 +20,9 @@ For more detailed information about the supported features, please refer to the 
 9. Support multiple OSes
 
 
-
 ![main](./readme/introduction.gif)
 
-
+ 
 > Note: When using it on macOS, you need to allow it in the Security & Privacy settings in order to use it
 
 ![image](https://github.com/user-attachments/assets/a34ed5e9-bc76-4599-a1ab-97e2a68b3ed0)
