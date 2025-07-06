@@ -20,6 +20,26 @@ import serial.tools.list_ports
 def list_serial_ports():
     return [port.device for port in serial.tools.list_ports.comports()]
 
+class FindDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Find")
+        self.setModal(False)
+        layout = QHBoxLayout()
+        self.label = QLabel("Find:")
+        self.lineedit = QLineEdit()
+        self.case_checkbox = QCheckBox("Case Sensitive")
+        self.next_btn = QPushButton("Next")
+        self.prev_btn = QPushButton("Prev")
+        self.close_btn = QPushButton("Close")
+        layout.addWidget(self.label)
+        layout.addWidget(self.lineedit)
+        layout.addWidget(self.case_checkbox)
+        layout.addWidget(self.next_btn)
+        layout.addWidget(self.prev_btn)
+        layout.addWidget(self.close_btn)
+        self.setLayout(layout)
+
 class SerialTerminal(QMainWindow):
     serial_data_signal = Signal(str)
     sequential_complete_signal = Signal(bool, str)
@@ -288,6 +308,13 @@ class SerialTerminal(QMainWindow):
         self.last_ports = set(list_serial_ports())
         self._display_buffer = ""
 
+        self.find_dialog = FindDialog(self)
+        self.find_dialog.lineedit.textChanged.connect(self.on_find_text_changed)
+        self.find_dialog.case_checkbox.stateChanged.connect(self.on_find_text_changed)
+        self.find_dialog.next_btn.clicked.connect(self.terminal_widget.next_match)
+        self.find_dialog.prev_btn.clicked.connect(self.terminal_widget.prev_match)
+        self.find_dialog.close_btn.clicked.connect(self.close_find_dialog)
+
     def eventFilter(self, obj, event):
         key = None
         text = ""
@@ -307,6 +334,10 @@ class SerialTerminal(QMainWindow):
                 text = event.text()
                 modifiers = event.modifiers()
 
+                if (modifiers & Qt.ControlModifier or modifiers & Qt.MetaModifier) and key == Qt.Key_F:
+                    self.show_find_dialog()
+                    return True
+                
                 # Font size adjustment
                 if modifiers == Qt.KeyboardModifier.ControlModifier:
                     # Ctrl + Plus
@@ -380,6 +411,11 @@ class SerialTerminal(QMainWindow):
                     elif key == Qt.Key_F6:
                         self.toggle_left_panel()
                         return True
+                    elif key == Qt.Key_F:
+                        # Ctrl+F or Cmd+F to show find dialog
+                        if (event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)):
+                            self.show_find_dialog()
+                            return True
         
             if not (self.serial and self.serial.is_open):
                 return True
@@ -1769,3 +1805,24 @@ class SerialTerminal(QMainWindow):
             subprocess.Popen(["open", config_dir])
         except Exception as e:
             self.update_status_bar(f"Could not open config folder: {e}")
+
+    def keyPressEvent(self, event):
+        if (event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_F) or \
+           (event.modifiers() & Qt.MetaModifier and event.key() == Qt.Key_F):
+            self.show_find_dialog()
+        else:
+            super().keyPressEvent(event)
+
+    def show_find_dialog(self):
+        self.find_dialog.show()
+        self.find_dialog.raise_()
+        self.find_dialog.lineedit.setFocus()
+
+    def close_find_dialog(self):
+        self.find_dialog.hide()
+        self.terminal_widget.clear_search()
+
+    def on_find_text_changed(self, *args):
+        text = self.find_dialog.lineedit.text()
+        case_sensitive = self.find_dialog.case_checkbox.isChecked()
+        self.terminal_widget.start_search(text, case_sensitive)

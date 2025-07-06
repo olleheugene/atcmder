@@ -62,6 +62,10 @@ class TerminalWidget(QAbstractScrollArea):
         self.verticalScrollBar().setRange(0, 1)
         self.horizontalScrollBar().setRange(0, 1)
 
+        self.search_text = ""
+        self.search_matches = []
+        self.search_index = -1
+
     def append_text(self, text):
         """Add text to terminal, handle ANSI clear screen and cursor home"""
         if not text:
@@ -186,38 +190,24 @@ class TerminalWidget(QAbstractScrollArea):
             return
         
         viewport_rect = self.viewport().rect()
-        
         effective_width = viewport_rect.width()
         if self.verticalScrollBar().isVisible():
             effective_width -= self.verticalScrollBar().width()
-        
         effective_height = viewport_rect.height()
         if self.horizontalScrollBar().isVisible():
             effective_height -= self.horizontalScrollBar().height()
-        
         visible_lines = max(1, effective_height // self.line_height)
         h_scroll_offset = self.horizontalScrollBar().value()
         total_lines = len(self.lines)
-        
-        # Calculate the starting line based on auto_scroll state and scroll_offset
-        # Stable calculation to prevent scroll synchronization errors
         if self.auto_scroll:
-            # If auto-scroll is enabled, always show the most recent content
             start_line = max(0, total_lines - visible_lines)
-            self.scroll_offset = 0  # If auto_scroll is enabled, the scroll offset is 0
+            self.scroll_offset = 0
         else:
-            # Scroll offset boundary check
             max_offset = max(0, total_lines - visible_lines)
             if self.scroll_offset > max_offset:
                 self.scroll_offset = max_offset
-
-            # Calculate the starting line based on scroll position
             start_line = max(0, total_lines - visible_lines - self.scroll_offset)
-
-        # Calculate the ending line to fill the screen regardless of scroll position
         end_line = min(total_lines, start_line + visible_lines)
-
-        # If there are no lines to display, return early
         if start_line >= total_lines:
             painter.end()
             return
@@ -239,6 +229,18 @@ class TerminalWidget(QAbstractScrollArea):
                     x2 = min(x2, effective_width - 5)
                     painter.fillRect(x1, y, x2 - x1, self.line_height, QColor(60, 120, 200, 120))
             
+            # Search highlight
+            if self.search_text:
+                for idx, match in enumerate(self.search_matches):
+                    if match[0] == line_idx:
+                        start_px = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:match[1]])
+                        end_px = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:match[2]])
+                        # Use different color for current selected search result
+                        if idx == self.search_index:
+                            painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 120, 0, 180))  # Dark orange
+                        else:
+                            painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 200, 50, 120))  # Light yellow
+
             for text_part, color in line_parts:
                 if text_part and x < effective_width - 5:
                     painter.setPen(color)
@@ -267,7 +269,6 @@ class TerminalWidget(QAbstractScrollArea):
                 cursor_x = 5 - h_scroll_offset + self.font_metrics.horizontalAdvance(
                     self._line_text(line_parts)[:self.cursor_col]
                 )
-
                 if cursor_x < effective_width - 5:
                     painter.setPen(QColor(200, 255, 200))
                     painter.drawRect(cursor_x, y, 2, self.line_height)
@@ -610,3 +611,56 @@ class TerminalWidget(QAbstractScrollArea):
             self.scroll_offset = len(self.lines)
             self.update_scrollbar()
             self.viewport().update()
+
+    def start_search(self, text, case_sensitive=False):
+        """Start a search and highlight all matches."""
+        self.search_text = text
+        self.search_matches = []
+        self.search_index = -1
+        if text:
+            for i, line in enumerate(self.lines):
+                line_text = self._line_text(line)
+                if not case_sensitive:
+                    line_text_cmp = line_text.lower()
+                    text_cmp = text.lower()
+                else:
+                    line_text_cmp = line_text
+                    text_cmp = text
+                idx = line_text_cmp.find(text_cmp)
+                while idx != -1:
+                    self.search_matches.append((i, idx, idx + len(text)))
+                    idx = line_text_cmp.find(text_cmp, idx + 1)
+        self.viewport().update()
+
+    def clear_search(self):
+        self.search_text = ""
+        self.search_matches = []
+        self.search_index = -1
+        self.viewport().update()
+
+    def next_match(self):
+        if not self.search_matches:
+            return
+        self.search_index = (self.search_index + 1) % len(self.search_matches)
+        line, start, end = self.search_matches[self.search_index]
+        visible_lines = max(1, self.viewport().height() // self.line_height)
+        total_lines = len(self.lines)
+        # 검색된 줄이 화면 중앙에 오도록 정확히 스크롤 조정
+        target_offset = total_lines - visible_lines - (line - visible_lines // 2)
+        self.scroll_offset = max(0, min(target_offset, total_lines - visible_lines))
+        self.auto_scroll = False  # 검색 이동 시 자동 스크롤 해제
+        self.update_scrollbar()
+        self.viewport().update()
+
+    def prev_match(self):
+        if not self.search_matches:
+            return
+        self.search_index = (self.search_index - 1) % len(self.search_matches)
+        line, start, end = self.search_matches[self.search_index]
+        visible_lines = max(1, self.viewport().height() // self.line_height)
+        total_lines = len(self.lines)
+        target_offset = total_lines - visible_lines - (line - visible_lines // 2)
+        self.scroll_offset = max(0, min(target_offset, total_lines - visible_lines))
+        self.auto_scroll = False
+        self.update_scrollbar()
+        self.viewport().update()
