@@ -650,23 +650,18 @@ class SerialTerminal(QMainWindow):
         self.clear_current_input_completely()
 
     def show_current_input(self):
-        """Show current input state in the status bar"""
-        if hasattr(self, 'status'):
-            if self.current_input_buffer:
-                history_info = ""
-                if self.command_history and self.history_index >= 0:
-                    history_info = f" (History: {self.history_index + 1}/{len(self.command_history)})"
-                # self.status.showMessage(f"Input: {self.current_input_buffer}{history_info}")
-            # else:
-            #     if self.serial and self.serial.is_open:
-            #         self.status.showMessage("Connected - Ready for input")
-            #     else:
-            #         self.status.showMessage("Disconnected")
-        # Update cursor position
-        if self.terminal_widget.lines:
-            line = len(self.terminal_widget.lines) - 1
-            col = self.terminal_widget._line_length(self.terminal_widget.lines[-1])
-            self.terminal_widget.set_cursor(line, col)
+        """Show the current input in the terminal"""
+        if not self.terminal_widget.lines:
+            return
+        
+        # Get the length of the last line using _line_text
+        col = len(self.terminal_widget._line_text(self.terminal_widget.lines[-1]))
+        
+        # Set cursor position to end of last line
+        self.terminal_widget.set_cursor(len(self.terminal_widget.lines) - 1, col)
+        
+        # Force update
+        self.terminal_widget.viewport().update()
 
     def update_terminal(self, data):
         """Update terminal with new data"""

@@ -244,6 +244,7 @@ class TerminalWidget(QAbstractScrollArea):
             if self.search_matches:
                 for match_idx, (match_line, match_start, match_end) in enumerate(self.search_matches):
                     if match_line >= start_line and match_line < end_line:
+                        # Fix y position to match text rendering
                         y = (match_line - start_line) * self.line_height
                         x_start = text_start_x + match_start * self.char_width - h_scroll_offset
                         x_end = text_start_x + match_end * self.char_width - h_scroll_offset
@@ -261,11 +262,12 @@ class TerminalWidget(QAbstractScrollArea):
                                 highlight_color = QColor(255, 255, 255, 60)  # White for other matches
                             
                             painter.fillRect(x_start, y, x_end - x_start, self.line_height, highlight_color)
-            
+        
             for line_idx in range(start_line, end_line):
                 if line_idx >= len(self.lines):
                     break
                 
+                # Text baseline position
                 y = (line_idx - start_line) * self.line_height + self.line_height
                 
                 # Draw line number
@@ -328,6 +330,7 @@ class TerminalWidget(QAbstractScrollArea):
                 if line_idx >= len(self.lines):
                     break
                 
+                # Fix y position calculation - align with text rendering
                 y = (line_idx - start_line) * self.line_height
                 
                 # Calculate selection bounds for this line
@@ -347,7 +350,7 @@ class TerminalWidget(QAbstractScrollArea):
                     # Middle lines of selection
                     start_col = 0
                     end_col = len(self._line_text(self.lines[line_idx]))
-                
+            
                 x_start = text_start_x + start_col * self.char_width - h_scroll_offset
                 x_end = text_start_x + end_col * self.char_width - h_scroll_offset
                 
@@ -355,8 +358,9 @@ class TerminalWidget(QAbstractScrollArea):
                 if x_end > text_start_x and x_start < self.viewport().width():
                     x_start = max(x_start, text_start_x)
                     x_end = min(x_end, self.viewport().width())
+                    # Use same y position as text rendering
                     painter.fillRect(x_start, y, x_end - x_start, self.line_height, selection_color)
-        
+    
         except Exception as e:
             print(f"Error in _draw_selection: {e}")
 
@@ -527,22 +531,35 @@ class TerminalWidget(QAbstractScrollArea):
         self.viewport().update()
 
     def copy_selection(self):
+        """Copy selected text to clipboard"""
         if not self.selection_start or not self.selection_end:
             return
+    
         sel_start, sel_end = sorted([self.selection_start, self.selection_end])
         lines = []
+    
         for i in range(sel_start[0], sel_end[0] + 1):
+            if i >= len(self.lines):
+                break
+            
             line = self._line_text(self.lines[i])
             if i == sel_start[0] and i == sel_end[0]:
+                # Selection is within one line
                 lines.append(line[sel_start[1]:sel_end[1]])
             elif i == sel_start[0]:
+                # First line of selection
                 lines.append(line[sel_start[1]:])
             elif i == sel_end[0]:
+                # Last line of selection
                 lines.append(line[:sel_end[1]])
             else:
+                # Middle lines of selection
                 lines.append(line)
+    
         text = '\n'.join(lines)
-        QGuiApplication.clipboard().setText(text)
+        if text:
+            QGuiApplication.clipboard().setText(text)
+            print(f"Copied {len(text)} characters to clipboard")
 
     def remove_last_char(self):
         """Remove the last character from the last line"""
@@ -602,7 +619,7 @@ class TerminalWidget(QAbstractScrollArea):
             self.cursor_col = 0
         else:
             self.cursor_line = len(self.lines) - 1
-            self.cursor_col = len(self._line_text(self.lines[-1]))  # _line_length 대신 len(_line_text()) 사용
+            self.cursor_col = len(self._line_text(self.lines[-1])) # Position at the end of the last line
     
         # Always keep the cursor visible when moving it to the end
         self.cursor_visible = True
@@ -739,3 +756,162 @@ class TerminalWidget(QAbstractScrollArea):
         self.search_index = -1
         self.search_case_sensitive = False
         self.viewport().update()
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events for text selection"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Start selection
+            pos = event.pos()
+            line, col = self._pos_to_linecol(pos)
+            self.selection_start = (line, col)
+            self.selection_end = (line, col)
+            self.is_selecting = True
+            self.viewport().update()
+        
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move events for text selection"""
+        if self.is_selecting and (event.buttons() & Qt.MouseButton.LeftButton):
+            # Update selection end
+            pos = event.pos()
+            line, col = self._pos_to_linecol(pos)
+            self.selection_end = (line, col)
+            self.viewport().update()
+        
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release events"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.is_selecting:
+                self.is_selecting = False
+                # If start and end are the same, clear selection
+                if self.selection_start == self.selection_end:
+                    self.selection_start = None
+                    self.selection_end = None
+                    self.viewport().update()
+        
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double-click to select word"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.pos()
+            line, col = self._pos_to_linecol(pos)
+            
+            if line < len(self.lines):
+                line_text = self._line_text(self.lines[line])
+                if col < len(line_text):
+                    # Find word boundaries
+                    start = col
+                    end = col
+                    
+                    # Find start of word
+                    while start > 0 and line_text[start - 1].isalnum():
+                        start -= 1
+                    
+                    # Find end of word
+                    while end < len(line_text) and line_text[end].isalnum():
+                        end += 1
+                    
+                    # Select the word
+                    self.selection_start = (line, start)
+                    self.selection_end = (line, end)
+                    self.viewport().update()
+        
+        super().mouseDoubleClickEvent(event)
+
+    def _pos_to_linecol(self, pos):
+        """Convert mouse position to line/column, accounting for line numbers"""
+        # Calculate line based on y position (add offset for text baseline)
+        line = pos.y() // self.line_height
+    
+        # Adjust for text area (after line numbers)
+        text_start_x = self.line_number_width if self.show_line_numbers else 0
+        adjusted_x = pos.x() - text_start_x + self.horizontalScrollBar().value()
+        col = max(0, adjusted_x // self.char_width)
+    
+        # Calculate actual line index based on scroll position
+        viewport_height = self.viewport().height()
+        if self.horizontalScrollBar().isVisible():
+            viewport_height -= self.horizontalScrollBar().height()
+    
+        visible_lines = max(1, viewport_height // self.line_height)
+        total_lines = len(self.lines)
+    
+        if self.auto_scroll:
+            start_line = max(0, total_lines - visible_lines + self.scroll_offset)
+            line += start_line
+        else:
+            line += self.scroll_offset
+    
+        # Ensure line is within bounds
+        line = max(0, min(line, total_lines - 1))
+    
+        return line, col
+
+    def keyPressEvent(self, event):
+        """Handle key press events"""
+        if event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Ctrl+C to copy selection
+            self.copy_selection()
+            event.accept()
+            return
+        elif event.key() == Qt.Key.Key_A and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Ctrl+A to select all
+            if self.lines:
+                self.selection_start = (0, 0)
+                last_line = len(self.lines) - 1
+                self.selection_end = (last_line, len(self._line_text(self.lines[last_line])))
+                self.viewport().update()
+            event.accept()
+            return
+        elif event.key() == Qt.Key.Key_Escape:
+            # Escape to clear selection
+            self.selection_start = None
+            self.selection_end = None
+            self.viewport().update()
+            event.accept()
+            return
+    
+        super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        """Handle right-click context menu"""
+        from PySide6.QtWidgets import QMenu
+    
+        menu = QMenu(self)
+    
+        # Copy action
+        copy_action = menu.addAction("Copy")
+        copy_action.setEnabled(self.selection_start is not None and self.selection_end is not None)
+        copy_action.triggered.connect(self.copy_selection)
+    
+        # Select all action
+        select_all_action = menu.addAction("Select All")
+        select_all_action.triggered.connect(self.select_all)
+    
+        # Clear action
+        clear_action = menu.addAction("Clear")
+        clear_action.triggered.connect(self.clear)
+    
+        menu.exec(event.globalPos())
+
+    def select_all(self):
+        """Select all text in the terminal"""
+        if self.lines:
+            self.selection_start = (0, 0)
+            last_line = len(self.lines) - 1
+            self.selection_end = (last_line, len(self._line_text(self.lines[last_line])))
+            self.viewport().update()
+
+    def resume_output(self):
+        """Resume output updates (called when Enter is pressed)"""
+        if self._output_frozen:
+            self._output_frozen = False
+            self.auto_scroll = True
+            # Scroll to bottom
+            self.scroll_offset = 0
+            self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+            self.viewport().update()
