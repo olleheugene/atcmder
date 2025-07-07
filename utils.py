@@ -4,6 +4,7 @@ import yaml
 import re
 import serial.tools.list_ports
 import shutil
+from pathlib import Path
 
 APP_ICON_NAME               = "app_icon.png"
 CLEAR_ICON_NAME             = "clear.png"
@@ -37,6 +38,9 @@ USER_SETTINGS               = get_user_config_path(SETTINGS_FILE)
 PREDEFINED_COMMAND_LIST1    = get_user_config_path(COMMANDS_PREDEFINED_FILE1)
 PREDEFINED_COMMAND_LIST2    = get_user_config_path(COMMANDS_PREDEFINED_FILE2)
 PREDEFINED_COMMAND_LIST3    = get_user_config_path(COMMANDS_PREDEFINED_FILE3)
+
+# History file path
+USER_HISTORY = get_user_config_path("atcmder_history.yaml")
 
 def get_resources(resource_file):
     if hasattr(sys, '_MEIPASS'):
@@ -300,3 +304,97 @@ def prepare_default_files():
     if not os.path.exists(USER_PORT_LIST):
         with open(USER_PORT_LIST, "w", encoding="utf-8") as f:
             yaml.safe_dump([], f)
+
+def load_command_history():
+    """Load command history from YAML file"""
+    try:
+        if os.path.exists(USER_HISTORY):
+            with open(USER_HISTORY, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                if isinstance(data, dict):
+                    return data.get("commands", [])
+                elif isinstance(data, list):
+                    # Legacy format support
+                    return data
+        return []
+    except Exception as e:
+        print(f"Error loading command history: {e}")
+        return []
+
+def save_command_history(command_history, max_count=50):
+    """Save command history to YAML file"""
+    try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(USER_HISTORY), exist_ok=True)
+        
+        # Limit history size
+        if len(command_history) > max_count:
+            command_history = command_history[:max_count]
+        
+        history_data = {
+            "settings": {
+                "max_count": max_count,
+                "auto_save": True
+            },
+            "commands": command_history
+        }
+        
+        with open(USER_HISTORY, "w", encoding="utf-8") as f:
+            yaml.safe_dump(history_data, f, allow_unicode=True, sort_keys=False)
+    except Exception as e:
+        print(f"Warning: Could not save command history: {e}")
+
+def add_to_history(command_history, command, max_count=50):
+    """Add command to history (removes duplicates and maintains order)"""
+    if not command or not command.strip():
+        return command_history
+    
+    command = command.strip()
+    
+    # Remove if already exists
+    if command in command_history:
+        command_history.remove(command)
+    
+    # Add to beginning
+    command_history.insert(0, command)
+    
+    # Limit size
+    if len(command_history) > max_count:
+        command_history = command_history[:max_count]
+    
+    return command_history
+
+def get_history_settings():
+    """Get history settings from YAML file"""
+    try:
+        if os.path.exists(USER_HISTORY):
+            with open(USER_HISTORY, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                if isinstance(data, dict) and "settings" in data:
+                    return data["settings"]
+        
+        # Default settings
+        return {
+            "max_count": 50,
+            "auto_save": True
+        }
+    except Exception:
+        return {
+            "max_count": 50,
+            "auto_save": True
+        }
+
+def clear_command_history():
+    """Clear all command history"""
+    try:
+        if os.path.exists(USER_HISTORY):
+            history_data = {
+                "settings": get_history_settings(),
+                "commands": []
+            }
+            with open(USER_HISTORY, "w", encoding="utf-8") as f:
+                yaml.safe_dump(history_data, f, allow_unicode=True, sort_keys=False)
+        return True
+    except Exception as e:
+        print(f"Error clearing command history: {e}")
+        return False

@@ -57,7 +57,6 @@ class SerialTerminal(QMainWindow):
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
-        utils.prepare_default_files()
         self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
         self.resize(1100, 600)
         self.serial = None
@@ -71,7 +70,9 @@ class SerialTerminal(QMainWindow):
         self._status_timer.setSingleShot(True)
         self._status_timer.timeout.connect(self._restore_connection_status)
 
-        self.load_command_history()
+        # Load command history using utils
+        self.command_history = utils.load_command_history()
+
         program_icon_path = utils.get_resources(utils.APP_ICON_NAME)
         if os.path.exists(program_icon_path):
             self.setWindowIcon(QIcon(program_icon_path))
@@ -526,15 +527,12 @@ class SerialTerminal(QMainWindow):
             command_to_send = self.current_input_buffer.rstrip() + "\r\n"
             self.serial.write(command_to_send.encode('utf-8', errors='replace'))
             
-            # Add to command history
-            if self.current_input_buffer in self.command_history:
-                self.command_history.remove(self.current_input_buffer)
-            self.command_history.insert(0, self.current_input_buffer)
-
-            # Limit history size
-            max_history = self.load_history_settings().get("max_count", 50)
-            if len(self.command_history) > max_history:
-                self.command_history = self.command_history[:max_history]
+            # Add to command history using utils
+            self.command_history = utils.add_to_history(
+                self.command_history, 
+                self.current_input_buffer,
+                utils.get_history_settings().get("max_count", 50)
+            )
 
         # Enter key input activates auto-scrolling and moves the scrollbar to the bottom
         self.terminal_widget.set_auto_scroll(True)
@@ -755,7 +753,8 @@ class SerialTerminal(QMainWindow):
 
     def closeEvent(self, event):
         """Save history on application exit"""
-        self.save_history_settings()
+        # Save history using utils
+        utils.save_command_history(self.command_history)
         if self.serial and self.serial.is_open:
             self.serial.close()
         super().closeEvent(event)
@@ -1332,18 +1331,16 @@ class SerialTerminal(QMainWindow):
         
         if command and self.serial and self.serial.is_open:
             try:
-                # Add command to history
-                if command not in self.command_history:
-                    self.command_history.insert(0, command)
-                    if len(self.command_history) > self.load_history_settings().get("max_count", 50):
-                        self.command_history.pop()
+                # Add command to history using utils
+                self.command_history = utils.add_to_history(
+                    self.command_history, 
+                    command,
+                    utils.get_history_settings().get("max_count", 50)
+                )
                 
                 # Send command with carriage return and line feed
                 command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
                 bytes_written = self.serial.write(command_bytes)
-                
-                # Update status bar with success message
-                # self.update_status_bar(f"Sent: {command}")
                 
                 # Display sent command in terminal for verification
                 self.serial_data_signal.emit(f"{command}\r\n")
@@ -1516,11 +1513,12 @@ class SerialTerminal(QMainWindow):
                                 # Display sent command in terminal for verification
                                 self.serial_data_signal.emit(f"{command}\r\n")
                                 
-                                # Add to history
-                                if command not in self.command_history:
-                                    self.command_history.insert(0, command)
-                                    if len(self.command_history) > self.load_history_settings().get("max_count", 50):
-                                        self.command_history.pop()
+                                # Add to history using utils
+                                self.command_history = utils.add_to_history(
+                                    self.command_history, 
+                                    command,
+                                    utils.get_history_settings().get("max_count", 50)
+                                )
                                 
                                 # Wait for the specified time interval before sending next command
                                 time.sleep(time_interval)
@@ -1557,81 +1555,6 @@ class SerialTerminal(QMainWindow):
         self.sequential_btn.setEnabled(True)
         self.sequential_btn.setText("Sequential Send")
         self.update_status_bar(message)
-
-    def load_history_settings(self):
-        """히스토리 설정 로딩"""
-        try:
-            if os.path.exists(utils.USER_SETTINGS):
-                try:
-                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        user_settings_file = yaml.safe_load(f)
-                        # Find last_cmdlist_file in the list
-                        for item in user_settings_file:
-                            if isinstance(item, dict) and "history_settings" in item:
-                                return item["history_settings"]
-                    if not isinstance(item, dict):
-                        history_file = {"max_count": 50, "save_on_exit": True, "history": []}
-                    return history_file
-                except Exception:
-                    history_file = {"max_count": 50, "save_on_exit": True, "history": []}
-                    return history_file
-        except Exception as e:
-            print(f"Error loading history settings: {e}")
-            return {"max_count": 50, "save_on_exit": True}
-
-    def save_history_settings(self):
-        """Store history settings"""
-        try:
-            history_settings = {
-                "max_count": 50,
-                "save_on_exit": True,
-                "history": self.command_history[:50]
-            }
-            # Load existing settings first
-            settings = []
-            if os.path.exists(utils.USER_SETTINGS):
-                try:
-                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = yaml.safe_load(f)
-                    if not isinstance(settings, list):
-                        settings = []
-                except Exception:
-                    settings = []
-            
-            # Find existing font object and update it
-            for item in settings:
-                if isinstance(item, dict) and "history_settings" in item:
-                    # Update only the size, keep other font properties
-                    item["history_settings"] = history_settings
-                    item_found = True
-                    break
-            
-            # If no font object found, add new one
-            if not item_found:
-                history_obj = {
-                    "history_settings": {
-                    "max_count": 50,
-                    "save_on_exit": True,
-                    "history": []
-                    },
-                }
-                settings.append(history_obj)
-            
-            # Save back to file
-            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
-        except Exception as e:
-            print(f"Warning: Could not save theme settings: {e}")
-
-    def load_command_history(self):
-        """명령 히스토리 로딩"""
-        try:
-            settings = self.load_history_settings()
-            # self.command_history = settings.get("history_settings", [])
-            self.command_history = settings.get("history", [])
-        except Exception as e:
-            print(f"Error loading command history: {e}")
-            self.command_history = []
     
     def load_font_settings(self):
         """Load font settings from file or return default"""
