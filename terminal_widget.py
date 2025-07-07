@@ -73,7 +73,7 @@ class TerminalWidget(QAbstractScrollArea):
         return "".join(part for part, color in line_parts)
 
     def append_text(self, text):
-        """Add text to terminal, handle ANSI clear screen and cursor home"""
+        """Add text to terminal with optional timestamp"""
         if not text:
             return
 
@@ -98,9 +98,23 @@ class TerminalWidget(QAbstractScrollArea):
 
         text = text.replace('\r\n', '\n').replace('\r', '\n')
         lines = text.split('\n')
+        
+        # Get current timestamp
+        import datetime
+        current_time = datetime.datetime.now()
+        timestamp = f"[{current_time.strftime('%H:%M:%S.%f')[:-3]}] "
+        
         for i, line in enumerate(lines):
             if i > 0 or not self.lines:
                 self.lines.append([])
+            
+            # Add timestamp to each new line if show_time is enabled
+            if self.show_time and (i > 0 or not self.lines or len(self.lines) == 1):
+                # Create timestamp with gray color
+                timestamp_color = QColor(128, 128, 128)  # Gray color for timestamp
+                self.lines[-1].append((timestamp, timestamp_color))
+            
+            # Parse and add the actual text content
             parsed = self.parse_ansi_text(line)
             merged = []
             for part, color in parsed:
@@ -351,15 +365,43 @@ class TerminalWidget(QAbstractScrollArea):
                     start_col = 0
                     end_col = len(self._line_text(self.lines[line_idx]))
             
-                x_start = text_start_x + start_col * self.char_width - h_scroll_offset
-                x_end = text_start_x + end_col * self.char_width - h_scroll_offset
+                # Calculate x positions more accurately
+                line_parts = self.lines[line_idx]
+                x_start = text_start_x - h_scroll_offset
+                x_end = text_start_x - h_scroll_offset
                 
-                # Only draw if visible
-                if x_end > text_start_x and x_start < self.viewport().width():
-                    x_start = max(x_start, text_start_x)
-                    x_end = min(x_end, self.viewport().width())
-                    # Use same y position as text rendering
-                    painter.fillRect(x_start, y, x_end - x_start, self.line_height, selection_color)
+                # Calculate start position
+                current_col = 0
+                for part, _ in line_parts:
+                    if current_col + len(part) <= start_col:
+                        x_start += self.font_metrics.horizontalAdvance(part)
+                        current_col += len(part)
+                    else:
+                        # Start position is within this part
+                        chars_before = start_col - current_col
+                        if chars_before > 0:
+                            x_start += self.font_metrics.horizontalAdvance(part[:chars_before])
+                        break
+            
+                # Calculate end position
+                current_col = 0
+                x_end = text_start_x - h_scroll_offset
+                for part, _ in line_parts:
+                    if current_col + len(part) <= end_col:
+                        x_end += self.font_metrics.horizontalAdvance(part)
+                        current_col += len(part)
+                    else:
+                        # End position is within this part
+                        chars_before = end_col - current_col
+                        if chars_before > 0:
+                            x_end += self.font_metrics.horizontalAdvance(part[:chars_before])
+                        break
+            
+            # Only draw if visible
+            if x_end > text_start_x and x_start < self.viewport().width():
+                x_start = max(x_start, text_start_x)
+                x_end = min(x_end, self.viewport().width())
+                painter.fillRect(x_start, y, x_end - x_start, self.line_height, selection_color)
     
         except Exception as e:
             print(f"Error in _draw_selection: {e}")
@@ -443,6 +485,11 @@ class TerminalWidget(QAbstractScrollArea):
         self.show_line_numbers = show
         self._update_line_number_width()
         self.update_scrollbar()
+        self.viewport().update()
+
+    def set_show_time(self, show):
+        """Enable or disable time display"""
+        self.show_time = show
         self.viewport().update()
 
     def wheelEvent(self, event):
@@ -823,14 +870,13 @@ class TerminalWidget(QAbstractScrollArea):
         super().mouseDoubleClickEvent(event)
 
     def _pos_to_linecol(self, pos):
-        """Convert mouse position to line/column, accounting for line numbers"""
-        # Calculate line based on y position (add offset for text baseline)
+        """Convert mouse position to line/column, accounting for line numbers and timestamps"""
+        # Calculate line based on y position
         line = pos.y() // self.line_height
     
         # Adjust for text area (after line numbers)
         text_start_x = self.line_number_width if self.show_line_numbers else 0
         adjusted_x = pos.x() - text_start_x + self.horizontalScrollBar().value()
-        col = max(0, adjusted_x // self.char_width)
     
         # Calculate actual line index based on scroll position
         viewport_height = self.viewport().height()
@@ -848,6 +894,46 @@ class TerminalWidget(QAbstractScrollArea):
     
         # Ensure line is within bounds
         line = max(0, min(line, total_lines - 1))
+    
+        # Calculate column position more accurately
+        if line < len(self.lines):
+            line_parts = self.lines[line]
+            current_x = 0
+            col = 0
+        
+            # Go through each part of the line to find the exact character position
+            for part, _ in line_parts:
+                part_width = self.font_metrics.horizontalAdvance(part)
+            
+                if current_x + part_width > adjusted_x:
+                    # The click is within this part
+                    remaining_x = adjusted_x - current_x
+                    if remaining_x <= 0:
+                        break
+                
+                    # Find the exact character within this part
+                    for i, char in enumerate(part):
+                        char_width = self.font_metrics.horizontalAdvance(char)
+                        if remaining_x <= char_width / 2:
+                            # Clicked on left half of character
+                            col += i
+                            break
+                        remaining_x -= char_width
+                        if remaining_x <= 0:
+                            # Clicked on right half of character
+                            col += i + 1
+                            break
+                    else:
+                        # Clicked after the last character in this part
+                        col += len(part)
+                    break
+                else:
+                    # Click is after this part
+                    current_x += part_width
+                    col += len(part)
+        else:
+            # Fallback for invalid line
+            col = max(0, adjusted_x // self.char_width)
     
         return line, col
 

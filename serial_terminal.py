@@ -1720,21 +1720,15 @@ class SerialTerminal(QMainWindow):
         self.font_size = settings['font']['size']
         self.font_family = settings['font']['name']
         
-        # Apply theme settings
-        if hasattr(self, 'apply_theme'):
-            self.apply_theme(settings['theme'])
-        
         # Apply output window settings
         self.terminal_widget.set_show_line_numbers(settings['output_window']['show_line_numbers'])
-        if hasattr(self.terminal_widget, 'set_show_time'):
-            self.terminal_widget.set_show_time(settings['output_window']['show_time'])
+        self.terminal_widget.set_show_time(settings['output_window']['show_time'])
         
         # Force UI update
         self.terminal_widget.update_scrollbar()
         self.terminal_widget.viewport().update()
         
-        # Update status bar
-        self.update_status_bar("Settings applied successfully")
+        print(f"Settings applied - Show time: {settings['output_window']['show_time']}")
 
     def load_settings(self):
         """Load settings from YAML file"""
