@@ -16,7 +16,22 @@ class TerminalWidget(QAbstractScrollArea):
         self.lines = []
         self.scroll_offset = 0
         self.auto_scroll = True 
-
+        
+        # Line number settings
+        self.show_line_numbers = False
+        self.line_number_width = 0
+        self.line_number_padding = 10  # Padding between line numbers and text
+    
+        # Selection attributes
+        self.selection_start = None
+        self.selection_end = None
+        self.is_selecting = False
+    
+        # Cursor attributes
+        self.cursor_line = 0
+        self.cursor_col = 0
+        self.cursor_visible = True
+    
         # ANSI color cache
         self.ansi_colors = {
             30: QColor(0, 0, 0), 31: QColor(205, 49, 49), 32: QColor(13, 188, 121),
@@ -29,15 +44,6 @@ class TerminalWidget(QAbstractScrollArea):
         self.default_color = QColor(200, 200, 200)
         self.current_color = self.default_color
 
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAutoFillBackground(True)
-        palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Base, QColor(30, 30, 30))
-        self.setPalette(palette)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
         # Fast rendering with QTimer
         self._update_pending = False
         self._update_timer = QTimer(self)
@@ -45,26 +51,26 @@ class TerminalWidget(QAbstractScrollArea):
         self._update_timer.timeout.connect(self._do_update)
         self._update_timer.start()
 
-        # Block selection variables
-        self.selection_start = None  # (line, col)
-        self.selection_end = None    # (line, col)
-        self.is_selecting = False
-
-        # Cursor variables
-        self.cursor_line = 0
-        self.cursor_col = 0
-        self.cursor_visible = True
-        self._cursor_timer = QTimer(self)
-        self._cursor_timer.setInterval(500)  # 0.5s blink
-        self._cursor_timer.timeout.connect(self._toggle_cursor)
-        self._cursor_timer.start()
-
-        self.verticalScrollBar().setRange(0, 1)
-        self.horizontalScrollBar().setRange(0, 1)
-
+        # Search functionality
         self.search_text = ""
         self.search_matches = []
         self.search_index = -1
+        self.search_case_sensitive = False
+
+        # Add flag to prevent output updates when manually scrolling
+        self._output_frozen = False
+        
+        # Add flag to prevent recursion in scrollbar updates
+        self._updating_scrollbar = False
+
+        # Connect scrollbar signals
+        self.verticalScrollBar().valueChanged.connect(self._on_vertical_scroll)
+
+    def _line_text(self, line_parts):
+        """Extract plain text from a line's parts (ignoring colors)"""
+        if not line_parts:
+            return ""
+        return "".join(part for part, color in line_parts)
 
     def append_text(self, text):
         """Add text to terminal, handle ANSI clear screen and cursor home"""
@@ -107,6 +113,16 @@ class TerminalWidget(QAbstractScrollArea):
         if len(self.lines) > MAX_TERMINAL_LINES:
             del self.lines[:len(self.lines) - MAX_TERMINAL_LINES]
         
+        # Update line number width if needed
+        if self.show_line_numbers:
+            self._update_line_number_width()
+        
+        # If output is frozen (user is manually scrolling), don't update the view
+        if self._output_frozen:
+            # Still update scrollbar range but don't change position
+            self.update_scrollbar()
+            return
+        
         # Ensure the scroll offset remains stable after adding data to avoid view shifting
         visible_lines = max(1, self.viewport().height() // self.line_height)
 
@@ -117,20 +133,10 @@ class TerminalWidget(QAbstractScrollArea):
             new_lines_added = lines_after - lines_before
 
             # If text was added to the existing last line (without a line break), no offset adjustment is needed
-            # Only adjust the offset if new lines were added
             if new_lines_added > 0:
                 self.scroll_offset += new_lines_added
 
-            # If text was added to the existing last line (without a line break), no offset adjustment is needed
-            # (This is special handling for data coming in one line at a time)
-            if new_lines_added == 0 and len(self.lines) > 0:
-                last_line_length_after = len(self._line_text(self.lines[-1]))
-                if last_line_length_after > last_line_length_before:
-                    # If the length of the last line has increased but is not actually visible on the screen
-                    # This is to maintain the scroll position even if text is added to the same line
-                    self.viewport().update()
-
-        # Schedule an update
+        self.update_scrollbar()
         self._schedule_update()
 
         # If auto-scroll is enabled, move the cursor to the bottom and scroll
@@ -144,365 +150,381 @@ class TerminalWidget(QAbstractScrollArea):
             if verticalBar:
                 verticalBar.setValue(verticalBar.maximum())
 
+    def parse_ansi_text(self, text):
+        """Parse ANSI escape sequences for colors"""
+        if not text:
+            return [(text, self.current_color)]
+        
+        # Simple ANSI color parsing
+        ansi_pattern = re.compile(r'\x1b\[(\d+)m')
+        parts = []
+        last_end = 0
+        
+        for match in ansi_pattern.finditer(text):
+            # Add text before this ANSI code
+            if match.start() > last_end:
+                plain_text = text[last_end:match.start()]
+                if plain_text:
+                    parts.append((plain_text, self.current_color))
+            
+            # Process ANSI code
+            code = int(match.group(1))
+            if code == 0:  # Reset
+                self.current_color = self.default_color
+            elif code in self.ansi_colors:
+                self.current_color = self.ansi_colors[code]
+            
+            last_end = match.end()
+        
+        # Add remaining text
+        if last_end < len(text):
+            remaining_text = text[last_end:]
+            if remaining_text:
+                parts.append((remaining_text, self.current_color))
+        
+        # If no parts were created, return the whole text with current color
+        if not parts:
+            parts.append((text, self.current_color))
+        
+        return parts
+
     def _schedule_update(self):
+        """Schedule a UI update"""
         if not self._update_pending:
             self._update_pending = True
 
     def _do_update(self):
+        """Perform the actual UI update"""
         if self._update_pending:
-            self.update_scrollbar()
-            self.viewport().update()
             self._update_pending = False
-
-    def parse_ansi_text(self, text):
-        """Parse ANSI color sequences (color only)"""
-        result = []
-        ansi_escape = re.compile(r'\x1B\[[0-9;]*m')
-        current_color = self.current_color
-        pos = 0
-        for match in ansi_escape.finditer(text):
-            if pos < match.start():
-                result.append((text[pos:match.start()], current_color))
-            code_str = match.group()[2:-1]
-            if code_str == '0' or code_str == '':
-                current_color = self.default_color
-            else:
-                for code in code_str.split(';'):
-                    if code.isdigit():
-                        color_code = int(code)
-                        if color_code in self.ansi_colors:
-                            current_color = self.ansi_colors[color_code]
-                        elif color_code == 0:
-                            current_color = self.default_color
-            pos = match.end()
-        if pos < len(text):
-            result.append((text[pos:], current_color))
-        self.current_color = current_color
-        return result
+            self.viewport().update()
 
     def paintEvent(self, event):
         painter = QPainter(self.viewport())
-        painter.setFont(self.font)
-        painter.fillRect(self.viewport().rect(), QColor(30, 30, 30))
-        
-        if not self.lines:
-            painter.end()
-            return
-        
-        viewport_rect = self.viewport().rect()
-        effective_width = viewport_rect.width()
-        if self.verticalScrollBar().isVisible():
-            effective_width -= self.verticalScrollBar().width()
-        effective_height = viewport_rect.height()
-        if self.horizontalScrollBar().isVisible():
-            effective_height -= self.horizontalScrollBar().height()
-        visible_lines = max(1, effective_height // self.line_height)
-        h_scroll_offset = self.horizontalScrollBar().value()
-        total_lines = len(self.lines)
-        if self.auto_scroll:
-            start_line = max(0, total_lines - visible_lines)
-            self.scroll_offset = 0
-        else:
-            max_offset = max(0, total_lines - visible_lines)
-            if self.scroll_offset > max_offset:
-                self.scroll_offset = max_offset
-            start_line = max(0, total_lines - visible_lines - self.scroll_offset)
-        end_line = min(total_lines, start_line + visible_lines)
-        if start_line >= total_lines:
-            painter.end()
-            return
-        
-        y = 5
-        for line_idx in range(start_line, end_line):
-            line_parts = self.lines[line_idx]
-            x = 5 - h_scroll_offset
-            y_line = y + self.font_metrics.ascent()
+        try:
+            painter.setFont(self.font)
+            painter.fillRect(self.viewport().rect(), QColor(30, 30, 30))
             
-            # Selection highlight
-            if self.selection_start and self.selection_end:
-                sel_start, sel_end = sorted([self.selection_start, self.selection_end])
-                if sel_start[0] <= line_idx <= sel_end[0]:
-                    sel_col_start = sel_start[1] if line_idx == sel_start[0] else 0
-                    sel_col_end = sel_end[1] if line_idx == sel_end[0] else self._line_length(line_parts)
-                    x1 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_start])
-                    x2 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_end])
-                    x2 = min(x2, effective_width - 5)
-                    painter.fillRect(x1, y, x2 - x1, self.line_height, QColor(60, 120, 200, 120))
+            if not self.lines:
+                return
             
-            # Search highlight
-            if self.search_text:
-                for idx, match in enumerate(self.search_matches):
-                    if match[0] == line_idx:
-                        start_px = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:match[1]])
-                        end_px = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:match[2]])
-                        # Use different color for current selected search result
-                        if idx == self.search_index:
-                            painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 120, 0, 180))  # Dark orange
-                        else:
-                            painter.fillRect(start_px, y, end_px - start_px, self.line_height, QColor(255, 200, 50, 120))  # Light yellow
-
-            for text_part, color in line_parts:
-                if text_part and x < effective_width - 5:
+            viewport_rect = self.viewport().rect()
+            effective_width = viewport_rect.width()
+            if self.verticalScrollBar().isVisible():
+                effective_width -= self.verticalScrollBar().width()
+            effective_height = viewport_rect.height()
+            if self.horizontalScrollBar().isVisible():
+                effective_height -= self.horizontalScrollBar().height()
+            
+            visible_lines = max(1, effective_height // self.line_height)
+            h_scroll_offset = self.horizontalScrollBar().value()
+            total_lines = len(self.lines)
+            
+            # Calculate text start position (after line numbers)
+            text_start_x = self.line_number_width if self.show_line_numbers else 0
+            
+            if self.auto_scroll:
+                start_line = max(0, total_lines - visible_lines + self.scroll_offset)
+            else:
+                start_line = self.scroll_offset
+            
+            end_line = min(total_lines, start_line + visible_lines + 1)
+            
+            # Draw line number background if enabled
+            if self.show_line_numbers and self.line_number_width > 0:
+                line_number_rect = viewport_rect.adjusted(0, 0, -(effective_width - self.line_number_width), 0)
+                painter.fillRect(line_number_rect, QColor(40, 40, 40))  # Slightly lighter background
+                
+                # Draw separator line
+                painter.setPen(QColor(60, 60, 60))
+                painter.drawLine(self.line_number_width - self.line_number_padding // 2, 0, 
+                               self.line_number_width - self.line_number_padding // 2, effective_height)
+        
+            # Draw search highlights first (behind text)
+            if self.search_matches:
+                for match_idx, (match_line, match_start, match_end) in enumerate(self.search_matches):
+                    if match_line >= start_line and match_line < end_line:
+                        y = (match_line - start_line) * self.line_height
+                        x_start = text_start_x + match_start * self.char_width - h_scroll_offset
+                        x_end = text_start_x + match_end * self.char_width - h_scroll_offset
+                        
+                        # Only draw if visible in text area
+                        if x_end > text_start_x and x_start < effective_width:
+                            # Clip to visible area
+                            x_start = max(x_start, text_start_x)
+                            x_end = min(x_end, effective_width)
+                            
+                            # Use different color for current match
+                            if match_idx == self.search_index:
+                                highlight_color = QColor(255, 255, 0, 100)  # Yellow for current match
+                            else:
+                                highlight_color = QColor(255, 255, 255, 60)  # White for other matches
+                            
+                            painter.fillRect(x_start, y, x_end - x_start, self.line_height, highlight_color)
+            
+            for line_idx in range(start_line, end_line):
+                if line_idx >= len(self.lines):
+                    break
+                
+                y = (line_idx - start_line) * self.line_height + self.line_height
+                
+                # Draw line number
+                if self.show_line_numbers:
+                    painter.setPen(QColor(120, 120, 120))  # Gray color for line numbers
+                    line_number = str(line_idx + 1)  # 1-based line numbering
+                    line_number_x = self.line_number_width - self.line_number_padding - self.font_metrics.horizontalAdvance(line_number)
+                    painter.drawText(line_number_x, y, line_number)
+                
+                # Draw text content
+                x = text_start_x - h_scroll_offset
+                line_parts = self.lines[line_idx]
+                
+                for part, color in line_parts:
+                    if not part:
+                        continue
                     painter.setPen(color)
-                    text_width = self.font_metrics.horizontalAdvance(text_part)
-                    if x + text_width > effective_width - 5:
-                        available_width = effective_width - 5 - x
-                        if available_width > 0:
-                            truncated_text = ""
-                            current_width = 0
-                            for char in text_part:
-                                char_width = self.font_metrics.horizontalAdvance(char)
-                                if current_width + char_width > available_width:
-                                    break
-                                truncated_text += char
-                                current_width += char_width
-                            if truncated_text:
-                                painter.drawText(x, y_line, truncated_text)
-                        break
-                    else:
-                        painter.drawText(x, y_line, text_part)
-                        x += text_width
+                    if x + self.font_metrics.horizontalAdvance(part) > text_start_x:  # Only draw if visible
+                        visible_part = part
+                        if x < text_start_x:
+                            # Clip text that starts before the text area
+                            chars_to_skip = max(0, (text_start_x - x) // self.char_width)
+                            if chars_to_skip < len(part):
+                                visible_part = part[chars_to_skip:]
+                                x = text_start_x
+                        
+                        painter.drawText(x, y, visible_part)
+                    x += self.font_metrics.horizontalAdvance(part)
             
-            if (self.cursor_visible and 
-                line_idx == self.cursor_line and 
-                self.hasFocus()):
-                cursor_x = 5 - h_scroll_offset + self.font_metrics.horizontalAdvance(
-                    self._line_text(line_parts)[:self.cursor_col]
-                )
-                if cursor_x < effective_width - 5:
-                    painter.setPen(QColor(200, 255, 200))
-                    painter.drawRect(cursor_x, y, 2, self.line_height)
+            # Draw selection if active
+            if hasattr(self, 'selection_start') and hasattr(self, 'selection_end') and self.selection_start and self.selection_end:
+                self._draw_selection(painter, start_line, end_line, text_start_x, h_scroll_offset)
             
-            y += self.line_height
-            if y > effective_height:
-                break
+            # Draw cursor
+            if hasattr(self, 'cursor_visible') and hasattr(self, 'cursor_line') and hasattr(self, 'cursor_col'):
+                if self.cursor_visible and self.cursor_line >= start_line and self.cursor_line < end_line:
+                    cursor_y = (self.cursor_line - start_line) * self.line_height + self.line_height
+                    cursor_x = text_start_x + self.cursor_col * self.char_width - h_scroll_offset
+                    if cursor_x >= text_start_x:  # Only draw if cursor is in text area
+                        painter.setPen(QColor(255, 255, 255))
+                        painter.drawLine(cursor_x, cursor_y - self.line_height + 2, cursor_x, cursor_y - 2)
+
+        except Exception as e:
+            print(f"Error in paintEvent: {e}")
+        finally:
+            # Ensure painter is properly ended
+            if painter.isActive():
+                painter.end()
+
+    def _draw_selection(self, painter, start_line, end_line, text_start_x, h_scroll_offset):
+        """Draw text selection highlight"""
+        if not self.selection_start or not self.selection_end:
+            return
         
-        painter.end()
-
-    def _line_text(self, line_parts):
-        return ''.join(part for part, _ in line_parts)
-
-    def _line_length(self, line_parts):
-        return len(self._line_text(line_parts))
+        try:
+            sel_start, sel_end = sorted([self.selection_start, self.selection_end])
+            selection_color = QColor(0, 120, 215, 100)  # Blue selection
+            
+            for line_idx in range(max(sel_start[0], start_line), min(sel_end[0] + 1, end_line)):
+                if line_idx >= len(self.lines):
+                    break
+                
+                y = (line_idx - start_line) * self.line_height
+                
+                # Calculate selection bounds for this line
+                if line_idx == sel_start[0] and line_idx == sel_end[0]:
+                    # Selection is within one line
+                    start_col = sel_start[1]
+                    end_col = sel_end[1]
+                elif line_idx == sel_start[0]:
+                    # First line of selection
+                    start_col = sel_start[1]
+                    end_col = len(self._line_text(self.lines[line_idx]))
+                elif line_idx == sel_end[0]:
+                    # Last line of selection
+                    start_col = 0
+                    end_col = sel_end[1]
+                else:
+                    # Middle lines of selection
+                    start_col = 0
+                    end_col = len(self._line_text(self.lines[line_idx]))
+                
+                x_start = text_start_x + start_col * self.char_width - h_scroll_offset
+                x_end = text_start_x + end_col * self.char_width - h_scroll_offset
+                
+                # Only draw if visible
+                if x_end > text_start_x and x_start < self.viewport().width():
+                    x_start = max(x_start, text_start_x)
+                    x_end = min(x_end, self.viewport().width())
+                    painter.fillRect(x_start, y, x_end - x_start, self.line_height, selection_color)
+        
+        except Exception as e:
+            print(f"Error in _draw_selection: {e}")
 
     def update_scrollbar(self):
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        
-        if hasattr(self, 'font'):
-            self.font_metrics = QFontMetrics(self.font)
-            self.line_height = self.font_metrics.height()
-            self.char_width = self.font_metrics.horizontalAdvance('M')
-        
-        if self.line_height <= 0:
-            self.line_height = 20
-        if self.char_width <= 0:
-            self.char_width = 10
-        
-        viewport_height = self.viewport().height()
-        viewport_width = self.viewport().width()
-        
-        if viewport_height <= 0 or viewport_width <= 0:
+        """Update scrollbar ranges and positions"""
+        if self._updating_scrollbar:
             return
         
-        effective_height = viewport_height
-        effective_width = viewport_width
+        self._updating_scrollbar = True
         
-        if self.horizontalScrollBar().isVisible():
-            effective_height -= self.horizontalScrollBar().height()
-        
-        if self.verticalScrollBar().isVisible():
-            effective_width -= self.verticalScrollBar().width()
-        
-        visible_lines = max(1, effective_height // self.line_height)
-        total_lines = len(self.lines)
-        
-        # Vertical Scrollbar 업데이트
-        self.verticalScrollBar().blockSignals(True)
-        
-        min_range = 10
-        
-        if total_lines > visible_lines:
-            max_scroll = total_lines - visible_lines
+        try:
+            if not self.lines:
+                self.verticalScrollBar().setRange(0, 1)
+                self.horizontalScrollBar().setRange(0, 1)
+                return
             
-            # Scroll offset should not exceed the valid range
-            if self.scroll_offset > max_scroll:
-                self.scroll_offset = max_scroll
-
-            # If the scroll range is too small, adjust to the minimum value
-            if max_scroll < min_range:
-                self.verticalScrollBar().setRange(0, min_range)
-                self.verticalScrollBar().setPageStep(min_range)
-            else:
+            viewport_rect = self.viewport().rect()
+            effective_height = viewport_rect.height()
+            if self.horizontalScrollBar().isVisible():
+                effective_height -= self.horizontalScrollBar().height()
+            
+            visible_lines = max(1, effective_height // self.line_height)
+            total_lines = len(self.lines)
+            
+            # Set vertical scrollbar range
+            if total_lines > visible_lines:
+                max_scroll = total_lines - visible_lines
                 self.verticalScrollBar().setRange(0, max_scroll)
-                self.verticalScrollBar().setPageStep(visible_lines)
                 
-            self.verticalScrollBar().setSingleStep(1)
-            
-            # Adjust scroll position based on the auto_scroll state
-            if self.auto_scroll:
-                self.verticalScrollBar().setValue(max_scroll)
-                self.scroll_offset = 0
+                # Calculate scrollbar position based on current scroll_offset
+                if self.auto_scroll:
+                    # Auto-scroll mode: position from bottom
+                    scrollbar_value = max_scroll - self.scroll_offset
+                else:
+                    # Manual mode: position from top
+                    scrollbar_value = self.scroll_offset
+                
+                # Clamp the value to valid range
+                scrollbar_value = max(0, min(scrollbar_value, max_scroll))
+                self.verticalScrollBar().setValue(scrollbar_value)
             else:
-                # Calculate scroll position - accurately maintain user-scrolled position
-                scroll_value = max(0, max_scroll - self.scroll_offset)
-
-                # Bug fix: Ensure the value does not exceed the range
-                if scroll_value <= self.verticalScrollBar().maximum():
-                    self.verticalScrollBar().setValue(scroll_value)
-        else:
-            # If there are no lines to display, return early
-            self.verticalScrollBar().setRange(0, min_range)
-            self.verticalScrollBar().setPageStep(min_range)
-            self.verticalScrollBar().setValue(0)
+                self.verticalScrollBar().setRange(0, 1)
+                self.verticalScrollBar().setValue(0)
             
-            if self.scroll_offset != 0:
-                self.scroll_offset = 0
-                
-            # If there are not many lines, enable auto-scrolling
-            self.auto_scroll = True
-            
-        self.verticalScrollBar().blockSignals(False)
-        
-        # Horizontal Scrollbar 업데이트
-        max_line_width = 0
-        if self.lines:
+            # Calculate horizontal scroll considering line numbers
+            max_line_width = 0
             for line_parts in self.lines:
-                line_width = sum(self.font_metrics.horizontalAdvance(text_part) for text_part, _ in line_parts)
+                line_width = sum(self.font_metrics.horizontalAdvance(part) for part, _ in line_parts)
                 max_line_width = max(max_line_width, line_width)
+            
+            effective_width = viewport_rect.width()
+            if self.verticalScrollBar().isVisible():
+                effective_width -= self.verticalScrollBar().width()
+            
+            # Subtract line number width from effective width
+            text_area_width = effective_width - (self.line_number_width if self.show_line_numbers else 0)
+            
+            if max_line_width > text_area_width:
+                self.horizontalScrollBar().setRange(0, max_line_width - text_area_width)
+            else:
+                self.horizontalScrollBar().setRange(0, 1)
+                self.horizontalScrollBar().setValue(0)
+                
+        finally:
+            self._updating_scrollbar = False
+
+    def _update_line_number_width(self):
+        """Calculate the width needed for line numbers"""
+        if not self.show_line_numbers:
+            self.line_number_width = 0
+            return
         
-        content_width = max_line_width + (self.char_width * 2) + 10
-        
-        self.horizontalScrollBar().blockSignals(True)
-        if content_width > effective_width:
-            max_h_scroll = content_width - effective_width
-            self.horizontalScrollBar().setRange(0, max_h_scroll)
-            self.horizontalScrollBar().setPageStep(int(effective_width * 0.8))
-            self.horizontalScrollBar().setSingleStep(self.char_width)
-        else:
-            # Set a minimum range to always show the horizontal scrollbar
-            self.horizontalScrollBar().setRange(0, 10)
-            self.horizontalScrollBar().setPageStep(10)
-            self.horizontalScrollBar().setValue(0)
-        self.horizontalScrollBar().blockSignals(False)
+        # Calculate width based on maximum line count
+        max_lines = max(len(self.lines), MAX_TERMINAL_LINES)
+        line_count_str = str(max_lines)
+        self.line_number_width = self.font_metrics.horizontalAdvance(line_count_str) + self.line_number_padding
+
+    def set_show_line_numbers(self, show):
+        """Enable or disable line number display"""
+        self.show_line_numbers = show
+        self._update_line_number_width()
+        self.update_scrollbar()
+        self.viewport().update()
 
     def wheelEvent(self, event):
-        # Check the direction of the mouse wheel scroll
-        delta = event.angleDelta().y()
-        scroll_lines = 3  # Scroll speed adjustment
-
-        visible_lines = max(1, self.viewport().height() // self.line_height)
-        total_lines = len(self.lines)
-        max_scroll = max(0, total_lines - visible_lines)
-        
-        old_offset = self.scroll_offset
-        old_auto_scroll = self.auto_scroll
-        
-        if delta > 0:  # Scroll up (mouse wheel forward)
-            # When scrolling up, always disable auto-scrolling
-            self.auto_scroll = False
-            # Increase scroll offset (scroll up)
-            self.scroll_offset = min(self.scroll_offset + scroll_lines, max_scroll)
-        else:  # Scroll down (mouse wheel backward)
-            # Decrease offset when scrolling down
-            new_offset = max(0, self.scroll_offset - scroll_lines)
-            self.scroll_offset = new_offset
-
-            # Check if reached the bottom
-            if new_offset <= 0:
-                self.auto_scroll = True  # If reached the bottom, enable auto-scrolling
+        """Handle mouse wheel scrolling"""
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Ctrl + wheel for font size change
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.font_size = min(self.font_size + 1, 72)
             else:
-                self.auto_scroll = False  # If still in the middle of scrolling
-
-        # Update scrollbar and viewport only if the state has changed
-        if old_offset != self.scroll_offset or old_auto_scroll != self.auto_scroll:
-            # Debug message: Print state after wheel event
-            # print(f"Wheel: delta={delta}, offset={self.scroll_offset}, auto={self.auto_scroll}")
+                self.font_size = max(self.font_size - 1, 6)
             
-            self.update_scrollbar()
-            self.viewport().update()
+            new_font = QFont(self.font.family(), self.font_size)
+            new_font.setStyleHint(QFont.StyleHint.Monospace)
+            self.set_font(new_font)
+        else:
+            # Normal scrolling - use scrollbar
+            delta = event.angleDelta().y()
+            scroll_lines = max(1, abs(delta) // 120)  # Standard wheel delta is 120
+            
+            current_value = self.verticalScrollBar().value()
+            max_value = self.verticalScrollBar().maximum()
+            
+            if delta > 0:
+                # Scroll up - freeze output
+                new_value = max(0, current_value - scroll_lines)
+                if new_value < max_value:  # Not at bottom
+                    self._output_frozen = True
+                    self.auto_scroll = False
+            else:
+                # Scroll down
+                new_value = min(max_value, current_value + scroll_lines)
+                # If scrolled to bottom, unfreeze
+                if new_value >= max_value:
+                    self._output_frozen = False
+                    self.auto_scroll = True
+        
+            # Set scrollbar value (this will trigger _on_vertical_scroll)
+            self.verticalScrollBar().setValue(new_value)
         
         event.accept()
 
-    def scrollContentsBy(self, dx, dy):
-        if dy != 0:  # Vertical scroll change
-            visible_lines = max(1, self.viewport().height() // self.line_height)
-            total_lines = len(self.lines)
+    def _on_vertical_scroll(self, value):
+        """Handle vertical scrollbar value changes"""
+        if self._updating_scrollbar:
+            return
             
-            if total_lines > visible_lines:
-                scroll_value = self.verticalScrollBar().value()
-                max_value = self.verticalScrollBar().maximum()
-                max_scroll = total_lines - visible_lines
-                
-                # Calculate offset based on the current scroll value
-                old_offset = self.scroll_offset
-                self.scroll_offset = max_scroll - scroll_value
-
-                # Check if scrollbar is at the bottom (with 5 pixels tolerance)
-                tolerance = 5
-                if scroll_value >= max_value - tolerance:
-                    if not self.auto_scroll:
-                        self.auto_scroll = True  # If at the bottom, enable auto-scrolling
-                else:
-                    if self.auto_scroll:
-                        self.auto_scroll = False  # If not, disable auto-scrolling
-
-                # Debug message: Print scroll state
-                # print(f"Scroll: value={scroll_value}/{max_value}, offset={self.scroll_offset}, auto={self.auto_scroll}")
+        viewport_height = self.viewport().height()
+        if self.horizontalScrollBar().isVisible():
+            viewport_height -= self.horizontalScrollBar().height()
+        
+        visible_lines = max(1, viewport_height // self.line_height)
+        total_lines = len(self.lines)
+        
+        if total_lines <= visible_lines:
+            return
+        
+        scrollbar_max = self.verticalScrollBar().maximum()
+        
+        # Check if we're at the bottom
+        at_bottom = value >= scrollbar_max
+        
+        # If we were frozen and now at bottom, unfreeze
+        if self._output_frozen and at_bottom:
+            self._output_frozen = False
+            self.auto_scroll = True
+        # If we move away from bottom, freeze output and disable auto-scroll
+        elif not self._output_frozen and not at_bottom:
+            self._output_frozen = True
+            self.auto_scroll = False
+        
+        # Calculate scroll offset based on scrollbar position
+        if self.auto_scroll and not self._output_frozen:
+            # In auto-scroll mode, scrollbar works from bottom
+            self.scroll_offset = scrollbar_max - value
+        else:
+            # In manual mode, scrollbar works from top
+            self.scroll_offset = value
         
         self.viewport().update()
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            line, col = self._pos_to_linecol(event.pos())
-            self.selection_start = (line, col)
-            self.selection_end = (line, col)
-            self.is_selecting = True
-            self.viewport().update()
-
-    def mouseMoveEvent(self, event):
-        if self.is_selecting:
-            line, col = self._pos_to_linecol(event.pos())
-            self.selection_end = (line, col)
-            self.viewport().update()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.is_selecting = False
-            self.viewport().update()
-
-    def _pos_to_linecol(self, pos):
-        # 스크롤바 두께를 고려한 위치 계산
-        effective_height = self.viewport().height()
-        if self.horizontalScrollBar().isVisible():
-            effective_height -= self.horizontalScrollBar().height()
-        
-        y = pos.y() - 5
-        visible_lines = max(1, effective_height // self.line_height)
-        total_lines = len(self.lines)
-        start_line = max(0, total_lines - visible_lines - self.scroll_offset)
-        line = y // self.line_height + start_line
-        
-        if line < 0:
-            line = 0
-        if line >= len(self.lines):
-            line = len(self.lines) - 1 if self.lines else 0
-        
-        x = pos.x() - 5 + self.horizontalScrollBar().value()
-        text = self._line_text(self.lines[line]) if self.lines else ""
-        col = 0
-        acc = 0
-        
-        for i, ch in enumerate(text):
-            w = self.font_metrics.horizontalAdvance(ch)
-            if acc + w // 2 >= x:
-                col = i
-                break
-            acc += w
-        else:
-            col = len(text)
-        
-        return (line, col)
+    def scrollContentsBy(self, dx, dy):
+        """Handle scroll events - simplified version"""
+        # This method is called by Qt's scroll system
+        # We handle scrolling in _on_vertical_scroll instead
+        self.viewport().update()
 
     def copy_selection(self):
         if not self.selection_start or not self.selection_end:
@@ -554,10 +576,17 @@ class TerminalWidget(QAbstractScrollArea):
         self.viewport().update()
 
     def set_font(self, font):
+        """Update font and recalculate line number width"""
         self.font = font
         self.font_metrics = QFontMetrics(self.font)
         self.line_height = self.font_metrics.height()
         self.char_width = self.font_metrics.horizontalAdvance('M')
+        
+        # Update line number width with new font
+        if self.show_line_numbers:
+            self._update_line_number_width()
+        
+        self.update_scrollbar()
         self.viewport().update()
 
     def set_cursor(self, line, col):
@@ -573,8 +602,8 @@ class TerminalWidget(QAbstractScrollArea):
             self.cursor_col = 0
         else:
             self.cursor_line = len(self.lines) - 1
-            self.cursor_col = self._line_length(self.lines[-1])
-        
+            self.cursor_col = len(self._line_text(self.lines[-1]))  # _line_length 대신 len(_line_text()) 사용
+    
         # Always keep the cursor visible when moving it to the end
         self.cursor_visible = True
 
@@ -593,9 +622,12 @@ class TerminalWidget(QAbstractScrollArea):
         """Method to set the auto-scroll state"""
         self.auto_scroll = enabled
         if enabled:
+            self._output_frozen = False
             self.scroll_offset = 0
             self.update_scrollbar()
             self.viewport().update()
+        else:
+            self._output_frozen = True
 
     def toggle_auto_scroll(self):
         """Toggle auto-scrolling on or off."""
@@ -606,61 +638,104 @@ class TerminalWidget(QAbstractScrollArea):
         return self.auto_scroll
 
     def scroll_to_bottom(self):
-        """Scroll to the bottom of the terminal."""
+        """Scroll to the bottom of the terminal and resume output"""
         if self.lines:
-            self.scroll_offset = len(self.lines)
-            self.update_scrollbar()
+            self._output_frozen = False
+            self.auto_scroll = True
+            self.scroll_offset = 0
+            self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
             self.viewport().update()
 
     def start_search(self, text, case_sensitive=False):
-        """Start a search and highlight all matches."""
+        """Start searching for text in the terminal"""
         self.search_text = text
+        self.search_case_sensitive = case_sensitive
         self.search_matches = []
         self.search_index = -1
-        if text:
-            for i, line in enumerate(self.lines):
-                line_text = self._line_text(line)
-                if not case_sensitive:
-                    line_text_cmp = line_text.lower()
-                    text_cmp = text.lower()
-                else:
-                    line_text_cmp = line_text
-                    text_cmp = text
-                idx = line_text_cmp.find(text_cmp)
-                while idx != -1:
-                    self.search_matches.append((i, idx, idx + len(text)))
-                    idx = line_text_cmp.find(text_cmp, idx + 1)
-        self.viewport().update()
-
-    def clear_search(self):
-        self.search_text = ""
-        self.search_matches = []
-        self.search_index = -1
+        
+        if not text:
+            self.viewport().update()
+            return
+        
+        # Find all matches
+        for line_idx, line_parts in enumerate(self.lines):
+            line_text = self._line_text(line_parts)
+            search_line = line_text if case_sensitive else line_text.lower()
+            search_term = text if case_sensitive else text.lower()
+            
+            start = 0
+            while True:
+                pos = search_line.find(search_term, start)
+                if pos == -1:
+                    break
+                self.search_matches.append((line_idx, pos, pos + len(text)))
+                start = pos + 1
+    
+        # Move to first match if any found
+        if self.search_matches:
+            self.search_index = 0
+            self._scroll_to_match()
+    
         self.viewport().update()
 
     def next_match(self):
+        """Move to the next search match"""
         if not self.search_matches:
             return
+    
         self.search_index = (self.search_index + 1) % len(self.search_matches)
-        line, start, end = self.search_matches[self.search_index]
-        visible_lines = max(1, self.viewport().height() // self.line_height)
-        total_lines = len(self.lines)
-        # 검색된 줄이 화면 중앙에 오도록 정확히 스크롤 조정
-        target_offset = total_lines - visible_lines - (line - visible_lines // 2)
-        self.scroll_offset = max(0, min(target_offset, total_lines - visible_lines))
-        self.auto_scroll = False  # 검색 이동 시 자동 스크롤 해제
-        self.update_scrollbar()
+        self._scroll_to_match()
         self.viewport().update()
 
     def prev_match(self):
+        """Move to the previous search match"""
         if not self.search_matches:
             return
+    
         self.search_index = (self.search_index - 1) % len(self.search_matches)
-        line, start, end = self.search_matches[self.search_index]
-        visible_lines = max(1, self.viewport().height() // self.line_height)
+        self._scroll_to_match()
+        self.viewport().update()
+
+    def _scroll_to_match(self):
+        """Scroll to center the current match in the viewport"""
+        if not self.search_matches or self.search_index < 0:
+            return
+
+        match_line, _, _ = self.search_matches[self.search_index]
+
+        # Calculate viewport dimensions
+        viewport_height = self.viewport().height()
+        if self.horizontalScrollBar().isVisible():
+            viewport_height -= self.horizontalScrollBar().height()
+
+        visible_lines = max(1, viewport_height // self.line_height)
         total_lines = len(self.lines)
-        target_offset = total_lines - visible_lines - (line - visible_lines // 2)
-        self.scroll_offset = max(0, min(target_offset, total_lines - visible_lines))
+
+        # Calculate target scroll position to center the match
+        target_center_line = match_line
+        target_start_line = max(0, target_center_line - visible_lines // 2)
+
+        # Temporarily disable auto-scroll for search
+        was_auto_scroll = self.auto_scroll
         self.auto_scroll = False
+        
+        # Set scroll offset to show the match in center
+        self.scroll_offset = target_start_line
+        
+        # Update scrollbar
         self.update_scrollbar()
+        
+        # Restore auto-scroll state if we were at bottom
+        if was_auto_scroll and target_start_line + visible_lines >= total_lines:
+            self.auto_scroll = True
+
+        # Force viewport update
+        self.viewport().update()
+
+    def clear_search(self):
+        """Clear search results and highlights"""
+        self.search_text = ""
+        self.search_matches = []
+        self.search_index = -1
+        self.search_case_sensitive = False
         self.viewport().update()

@@ -13,6 +13,7 @@ import utils
 from terminal_widget import TerminalWidget
 from yaml_editor import YamlEditorDialog
 import yaml
+from settings_dialog import SettingsDialog
 
 LINEEDIT_MAX_NUMBER = 10
 
@@ -99,6 +100,31 @@ class SerialTerminal(QMainWindow):
         self.status.addPermanentWidget(self.author_label)
 
         menubar = self.menuBar()
+
+        settings_menu = menubar.addMenu("Settings")
+        open_settings_action = QAction("Open Settings", self)
+        open_settings_action.triggered.connect(self.open_settings_dialog)
+        settings_menu.addAction(open_settings_action)
+        settings_menu.addSeparator()
+        increase_font_action = QAction("Increase Font Size", self)
+        increase_font_action.setShortcut("Ctrl++")
+        increase_font_action.triggered.connect(self.increase_font_size)
+        settings_menu.addAction(increase_font_action)
+        decrease_font_action = QAction("Decrease Font Size", self)
+        decrease_font_action.setShortcut("Ctrl+-")
+        decrease_font_action.triggered.connect(self.decrease_font_size)
+        settings_menu.addAction(decrease_font_action)
+        reset_font_action = QAction("Reset Font Size", self)
+        reset_font_action.setShortcut("Ctrl+0")
+        reset_font_action.triggered.connect(self.reset_font_size)
+        settings_menu.addAction(reset_font_action)
+        settings_menu.addSeparator()
+        self.reconnect_signal.connect(self.try_reconnect_serial)
+        self.font_size_action = QAction(f"Current Font Size: {self.font_size}", self)
+        self.font_size_action.setEnabled(False)
+        settings_menu.addAction(self.font_size_action)
+        settings_menu.addSeparator()
+
         file_menu = menubar.addMenu("File")
         load_commands_action = QAction("Load Command list", self)
         load_commands_action.triggered.connect(self.load_command_list_from_file)
@@ -118,36 +144,6 @@ class SerialTerminal(QMainWindow):
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
-        view_menu = menubar.addMenu("View")
-        increase_font_action = QAction("Increase Font Size", self)
-        increase_font_action.setShortcut("Ctrl++")
-        increase_font_action.triggered.connect(self.increase_font_size)
-        view_menu.addAction(increase_font_action)
-        decrease_font_action = QAction("Decrease Font Size", self)
-        decrease_font_action.setShortcut("Ctrl+-")
-        decrease_font_action.triggered.connect(self.decrease_font_size)
-        view_menu.addAction(decrease_font_action)
-        reset_font_action = QAction("Reset Font Size", self)
-        reset_font_action.setShortcut("Ctrl+0")
-        reset_font_action.triggered.connect(self.reset_font_size)
-        view_menu.addAction(reset_font_action)
-        view_menu.addSeparator()
-        self.reconnect_signal.connect(self.try_reconnect_serial)
-        self.font_size_action = QAction(f"Current Font Size: {self.font_size}", self)
-        self.font_size_action.setEnabled(False)
-        view_menu.addAction(self.font_size_action)
-        view_menu.addSeparator()
-        theme_menu = menubar.addMenu("Theme")
-        light_action = QAction("Light", self)
-        dark_action = QAction("Dark", self)
-        default_action = QAction("Default", self)
-        light_action.triggered.connect(lambda: self.apply_theme(utils.LIGHT_CSS_NAME))
-        dark_action.triggered.connect(lambda: self.apply_theme(utils.DARK_CSS_NAME))
-        default_action.triggered.connect(lambda: self.apply_theme(utils.DEFAULT_CSS_NAME))
-        theme_menu.addAction(light_action)
-        theme_menu.addAction(dark_action)
-        theme_menu.addAction(default_action)
-        self.apply_theme(self.load_theme_settings())
 
         self.left_widget = QWidget()
         self.left_layout = QVBoxLayout()
@@ -315,6 +311,10 @@ class SerialTerminal(QMainWindow):
         self.find_dialog.next_btn.clicked.connect(self.terminal_widget.next_match)
         self.find_dialog.prev_btn.clicked.connect(self.terminal_widget.prev_match)
         self.find_dialog.close_btn.clicked.connect(self.close_find_dialog)
+
+        # Load settings first
+        self.settings = self.load_settings()
+        self.apply_initial_settings()
 
     def eventFilter(self, obj, event):
         key = None
@@ -520,7 +520,10 @@ class SerialTerminal(QMainWindow):
             self.show_current_input()
 
     def handle_enter(self):
-        """Enter Key"""
+        """Handle Enter key press"""
+        # Resume output if it was frozen
+        self.terminal_widget.resume_output()
+        
         self.terminal_widget.append_text("\n")
 
         if self.current_input_buffer:
@@ -666,7 +669,7 @@ class SerialTerminal(QMainWindow):
             self.terminal_widget.set_cursor(line, col)
 
     def update_terminal(self, data):
-        """Update terminal output"""
+        """Update terminal with new data"""
         # Apply ANSI spacing processing before displaying
         data = utils.process_ansi_spacing(data)
         
@@ -677,7 +680,7 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.append_text(data)
 
         # Refresh the screen - repaint() can provide more immediate updates
-        self.terminal_widget.repaint()
+        self.terminal_widget.update()
 
         # If auto-scroll is enabled, check the scrollbar position
         if auto_scroll_state:
@@ -822,9 +825,6 @@ class SerialTerminal(QMainWindow):
         else:
             self.update_status_bar("No command list loaded")
             self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
-
-    def show_about_dialog(self):
-        QMessageBox.about(self, "About AT Commander", "AT Command Terminal Emulator\n\nVersion " + utils.APP_VERSION + "\n\nBy OllehEugene")
 
     def save_selected_config_filepath(self, file_path):
         """Save the last loaded YAML file path to settings"""
@@ -1178,7 +1178,6 @@ class SerialTerminal(QMainWindow):
                 with open(theme_path, "r") as f:
                     style = f.read()
                     QApplication.instance().setStyleSheet(style)
-        self.save_theme_settings(theme_name)
 
 
     def on_port_changed(self, port):
@@ -1580,54 +1579,6 @@ class SerialTerminal(QMainWindow):
             font_info.setdefault("bold", False)
             return font_info
 
-    def load_theme_settings(self):
-        """Load th eme settings from file or return default"""
-        try:
-            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                settings = yaml.safe_load(f)
-
-                for item in settings:
-                    if isinstance(item, dict) and "theme" in item:
-                        theme_settings = item["theme"]
-                        return theme_settings
-
-        except Exception:
-            return "default"
-
-    def save_theme_settings(self, theme_name):
-        try:
-            # Load existing settings first
-            settings = []
-            if os.path.exists(utils.USER_SETTINGS):
-                try:
-                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = yaml.safe_load(f)
-                    if not isinstance(settings, list):
-                        settings = []
-                except Exception:
-                    settings = []
-            
-            # Find existing font object and update it
-            for item in settings:
-                if isinstance(item, dict) and "theme" in item:
-                    # Update only the size, keep other font properties
-                    item["theme"] = theme_name
-                    theme_found = True
-                    break
-            
-            # If no font object found, add new one
-            if not theme_found:
-                theme_obj = {
-                    "theme": "default"
-                }
-                settings.append(theme_obj)
-            
-            # Save back to file
-            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
-        except Exception as e:
-            print(f"Warning: Could not save theme settings: {e}")
-
     def save_font_settings(self):
         """Save current font settings to file"""
         try:
@@ -1749,3 +1700,128 @@ class SerialTerminal(QMainWindow):
         text = self.find_dialog.lineedit.text()
         case_sensitive = self.find_dialog.case_checkbox.isChecked()
         self.terminal_widget.start_search(text, case_sensitive)
+
+    def open_settings_dialog(self):
+        """Open settings dialog with proper callback"""
+        dlg = SettingsDialog(
+            parent=self,
+            settings_path=utils.USER_SETTINGS, 
+            on_settings_changed=self.apply_settings
+        )
+        dlg.exec()
+
+    def apply_settings(self, settings):
+        """Apply settings immediately to the UI"""
+        # Store settings
+        self.settings = settings
+        
+        # Apply font settings
+        font = QFont(settings['font']['name'], settings['font']['size'])
+        font.setBold(settings['font']['bold'])
+        font.setStyleHint(QFont.StyleHint.Monospace)
+        self.terminal_widget.set_font(font)
+        
+        # Update font size for internal tracking
+        self.font_size = settings['font']['size']
+        self.font_family = settings['font']['name']
+        
+        # Apply theme settings
+        if hasattr(self, 'apply_theme'):
+            self.apply_theme(settings['theme'])
+        
+        # Apply output window settings
+        self.terminal_widget.set_show_line_numbers(settings['output_window']['show_line_numbers'])
+        if hasattr(self.terminal_widget, 'set_show_time'):
+            self.terminal_widget.set_show_time(settings['output_window']['show_time'])
+        
+        # Force UI update
+        self.terminal_widget.update_scrollbar()
+        self.terminal_widget.viewport().update()
+        
+        # Update status bar
+        self.update_status_bar("Settings applied successfully")
+
+    def load_settings(self):
+        """Load settings from YAML file"""
+        try:
+            with open(utils.USER_SETTINGS, 'r') as f:
+                settings = yaml.safe_load(f)
+        
+            # Handle the incorrect YAML structure in your file
+            if isinstance(settings, list):
+                # Convert list format to dict format
+                converted_settings = {}
+                for item in settings:
+                    if isinstance(item, dict):
+                        converted_settings.update(item)
+                settings = converted_settings
+        
+            # Ensure all required keys exist with defaults
+            default_settings = {
+                'font': {'name': 'Monaco', 'size': 14, 'bold': False},
+                'theme': 'default',
+                'output_window': {'show_line_numbers': False, 'show_time': False},
+                'history': {'max_entries': 100}
+            }
+            
+            # Merge with defaults
+            for key, default_value in default_settings.items():
+                if key not in settings:
+                    settings[key] = default_value
+                elif isinstance(default_value, dict):
+                    for subkey, subdefault in default_value.items():
+                        if subkey not in settings[key]:
+                            settings[key][subkey] = subdefault
+            
+            return settings
+            
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+            # Return default settings
+            return {
+                'font': {'name': 'Monaco', 'size': 14, 'bold': False},
+                'theme': 'default',
+                'output_window': {'show_line_numbers': False, 'show_time': False},
+                'history': {'max_entries': 100}
+            }
+
+    def apply_initial_settings(self):
+        """Apply settings when the program starts"""
+        # Apply font settings
+        font = QFont(self.settings['font']['name'], self.settings['font']['size'])
+        font.setBold(self.settings['font']['bold'])
+        font.setStyleHint(QFont.StyleHint.Monospace)
+        self.terminal_widget.set_font(font)
+        
+        # Store font info for tracking
+        self.font_size = self.settings['font']['size']
+        self.font_family = self.settings['font']['name']
+        
+        # Apply output window settings
+        self.terminal_widget.set_show_line_numbers(self.settings['output_window']['show_line_numbers'])
+        if hasattr(self.terminal_widget, 'set_show_time'):
+            self.terminal_widget.set_show_time(self.settings['output_window']['show_time'])
+        
+        # Apply theme settings
+        if hasattr(self, 'apply_theme'):
+            self.apply_theme(self.settings['theme'])
+        
+        # Update UI elements
+        self.terminal_widget.update_scrollbar()
+        self.terminal_widget.viewport().update()
+        
+        print(f"Initial settings applied - Line numbers: {self.settings['output_window']['show_line_numbers']}")
+
+    def show_about_dialog(self): 
+        """Show about dialog"""
+        from PySide6.QtWidgets import QMessageBox
+        
+        QMessageBox.about(
+            self,
+            "About ATCMDER",
+            "ATCMDER Serial Terminal v1.0\n\n"
+            "A feature-rich serial terminal application\n"
+            "built with PySide6.\n\n"
+            "Features include ANSI color support,\n"
+            "text search, command history, and more."
+        )
