@@ -1727,7 +1727,6 @@ class SerialTerminal(QMainWindow):
         
         # print(f"Settings applied - Show time: {settings['output_window']['show_time']}")
 
-
     def load_settings(self):
         """Load settings from YAML file"""
         try:

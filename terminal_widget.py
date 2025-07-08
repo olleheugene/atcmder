@@ -98,7 +98,7 @@ class TerminalWidget(QAbstractScrollArea):
         self.viewport().update()
 
     def append_text(self, text):
-        """Add text to terminal, handle ANSI clear screen and cursor home"""
+        """Add text to terminal with optional timestamp"""
         if not text:
             return
 
@@ -279,7 +279,7 @@ class TerminalWidget(QAbstractScrollArea):
 
         # Draw line number background if enabled
         if self.show_line_numbers and self.line_number_width > 0:
-            line_number_rect = viewport_rect.adjusted(0, 0, -(effective_width - self.line_number_width), 0)
+            line_number_rect = viewport_rect.adjusted(0, 0, -(effective_width - self.line_number_width)-12, 0)
             painter.fillRect(line_number_rect, QColor(40, 40, 40))  # Slightly lighter background
             
             # Draw separator line
@@ -486,7 +486,11 @@ class TerminalWidget(QAbstractScrollArea):
         # Calculate width based on maximum line count
         max_lines = max(len(self.lines), MAX_TERMINAL_LINES)
         line_count_str = str(max_lines)
-        self.line_number_width = self.font_metrics.horizontalAdvance(line_count_str) + self.line_number_padding
+        if len(self.lines) < 1000:
+            self.line_number_width = self.font_metrics.horizontalAdvance(line_count_str) + self.line_number_padding
+        else:
+            # For more than 1000 lines, use a fixed width to avoid excessive width
+            self.line_number_width = self.font_metrics.horizontalAdvance(line_count_str) + self.line_number_padding + 5
 
     def _update_timestamp_width(self):
         """Calculate the width needed for timestamps"""
@@ -511,6 +515,11 @@ class TerminalWidget(QAbstractScrollArea):
         self.show_line_numbers = show
         self._update_line_number_width()
         self.update_scrollbar()
+        self.viewport().update()
+
+    def set_show_time(self, show):
+        """Enable or disable time display"""
+        self.show_time = show
         self.viewport().update()
 
     def wheelEvent(self, event):
@@ -692,22 +701,31 @@ class TerminalWidget(QAbstractScrollArea):
         """Copy selected text to clipboard"""
         if not self.selection_start or not self.selection_end:
             return
+    
         sel_start, sel_end = sorted([self.selection_start, self.selection_end])
         lines = []
+    
         for i in range(sel_start[0], sel_end[0] + 1):
             if i >= len(self.lines):
                 break
             line = self._line_text(self.lines[i])
             if i == sel_start[0] and i == sel_end[0]:
+                # Selection is within one line
                 lines.append(line[sel_start[1]:sel_end[1]])
             elif i == sel_start[0]:
+                # First line of selection
                 lines.append(line[sel_start[1]:])
             elif i == sel_end[0]:
+                # Last line of selection
                 lines.append(line[:sel_end[1]])
             else:
+                # Middle lines of selection
                 lines.append(line)
+    
         text = '\n'.join(lines)
-        QGuiApplication.clipboard().setText(text)
+        if text:
+            QGuiApplication.clipboard().setText(text)
+            print(f"Copied {len(text)} characters to clipboard")
 
     def clear(self):
         """Clear the terminal"""
