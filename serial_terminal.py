@@ -104,6 +104,29 @@ class SerialTerminal(QMainWindow):
 
         menubar = self.menuBar()
 
+        file_menu = menubar.addMenu("File")
+        load_commands_action = QAction("Load Command list", self)
+        load_commands_action.triggered.connect(self.load_command_list_from_file)
+        file_menu.addAction(load_commands_action)
+        edit_cmd_action = QAction("Edit Command list", self)
+        edit_cmd_action.setToolTip("Edit the currently selected predefined command list in your default editor")
+        edit_cmd_action.triggered.connect(self.edit_current_command_list)
+        file_menu.addAction(edit_cmd_action)
+        open_config_folder_action = QAction("Open Configfile folder", self)
+        open_config_folder_action.triggered.connect(self.open_config_folder)
+        file_menu.addAction(open_config_folder_action)
+        file_menu.addSeparator()
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        help_menu = menubar.addMenu("Help")
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
+        shortcut_action = QAction("Shortcuts", self)
+        shortcut_action.triggered.connect(self.show_shortcut_list)
+        help_menu.addAction(shortcut_action)
+
         settings_menu = menubar.addMenu("Settings")
         open_settings_action = QAction("Open Settings", self)
         open_settings_action.triggered.connect(self.open_settings_dialog)
@@ -127,26 +150,6 @@ class SerialTerminal(QMainWindow):
         self.font_size_action.setEnabled(False)
         settings_menu.addAction(self.font_size_action)
         settings_menu.addSeparator()
-
-        file_menu = menubar.addMenu("File")
-        load_commands_action = QAction("Load Command list", self)
-        load_commands_action.triggered.connect(self.load_command_list_from_file)
-        file_menu.addAction(load_commands_action)
-        edit_cmd_action = QAction("Edit Command list", self)
-        edit_cmd_action.setToolTip("Edit the currently selected predefined command list in your default editor")
-        edit_cmd_action.triggered.connect(self.edit_current_command_list)
-        file_menu.addAction(edit_cmd_action)
-        open_config_folder_action = QAction("Open Configfile folder", self)
-        open_config_folder_action.triggered.connect(self.open_config_folder)
-        file_menu.addAction(open_config_folder_action)
-        file_menu.addSeparator()
-        exit_action = QAction("Exit", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        help_menu = menubar.addMenu("Help")
-        about_action = QAction("About", self)
-        about_action.triggered.connect(self.show_about_dialog)
-        help_menu.addAction(about_action)
 
         self.left_widget = QWidget()
         self.left_layout = QVBoxLayout()
@@ -205,6 +208,10 @@ class SerialTerminal(QMainWindow):
         predefine_btn1 = QPushButton("1")
         predefine_btn2 = QPushButton("2")
         predefine_btn3 = QPushButton("3")
+
+        predefine_btn1.setShortcut("Alt+Ctrl+1")
+        predefine_btn2.setShortcut("Alt+Ctrl+2")
+        predefine_btn3.setShortcut("Alt+Ctrl+3")
 
         predefine_btn1.setToolTip("Load predefined command list 1")
         predefine_btn2.setToolTip("Load predefined command list 2")
@@ -473,20 +480,21 @@ class SerialTerminal(QMainWindow):
 
     def show_shortcut_list(self):
         shortcuts = (
-            "F1        : Show this shortcut list\n"
-            "F2        : Connect Selected Serial Port\n"
-            "F3        : Disconnect Serial port\n"
-            "F4        : Open port list\n"
-            "F5        : Refresh port list\n"
-            "F6        : Expand/collapse left panel\n"
-            "Ctrl + +  : Increase font size\n"
-            "Ctrl + -  : Decrease font size\n"
-            "Ctrl + 0  : Reset font size\n"
-            "Ctrl + C  : Copy selection\n"
-            "Ctrl + V  : Paste\n"
-            "Alt + 0~9 : Send predefined command\n"
-            "Up/Down   : Command history\n"
-            "Enter     : Send input\n"
+            "F1           : Show this shortcut list\n"
+            "F2           : Connect Selected Serial Port\n"
+            "F3           : Disconnect Serial port\n"
+            "F4           : Open port list\n"
+            "F5           : Refresh port list\n"
+            "F6           : Expand/collapse left panel\n"
+            "Ctrl + +     : Increase font size\n"
+            "Ctrl + -     : Decrease font size\n"
+            "Ctrl + 0     : Reset font size\n"
+            "Ctrl + C     : Copy selection\n"
+            "Ctrl + V     : Paste\n"
+            "Alt + 0~9    : Send predefined command\n"
+            "Ctrl+Alt+1~3 : Change predefined command group 1~3\n"
+            "Up/Down      : Command history\n"
+            "Enter        : Send input\n"
         )
 
         dlg = QDialog(self)
