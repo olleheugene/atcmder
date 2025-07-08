@@ -104,7 +104,7 @@ class SerialTerminal(QMainWindow):
 
         menubar = self.menuBar()
 
-        file_menu = menubar.addMenu("File")
+        file_menu = menubar.addMenu("Commands")
         load_commands_action = QAction("Load Command list", self)
         load_commands_action.triggered.connect(self.load_command_list_from_file)
         file_menu.addAction(load_commands_action)
@@ -1174,15 +1174,17 @@ class SerialTerminal(QMainWindow):
                 self.lineedits[ui_index].setAlignment(Qt.AlignLeft)
 
     def apply_theme(self, theme_name):
+        """Apply the specified theme"""
         if theme_name == "default":
             QApplication.instance().setStyleSheet("")
         else:
-            theme_path = utils.get_resources(theme_name+".css")
+            theme_path = utils.get_resources(theme_name + ".css")
             if os.path.exists(theme_path):
                 with open(theme_path, "r") as f:
                     style = f.read()
                     QApplication.instance().setStyleSheet(style)
-
+            else:
+                print(f"Theme file not found: {theme_path}")
 
     def on_port_changed(self, port):
         self.selected_port = port
@@ -1733,11 +1735,18 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.set_show_line_numbers(settings['output_window']['show_line_numbers'])
         self.terminal_widget.set_show_timestamps(settings['output_window']['show_time'])
         
+        # Apply theme settings - handle both string and dict formats
+        theme = settings.get('theme', 'default')
+        if isinstance(theme, dict):
+            theme_name = theme.get('name', 'default')
+        else:
+            theme_name = theme  # theme is already a string
+        
+        self.apply_theme(theme_name)
+        
         # Force UI update
         self.terminal_widget.update_scrollbar()
         self.terminal_widget.viewport().update()
-        
-        # print(f"Settings applied - Show time: {settings['output_window']['show_time']}")
 
     def load_settings(self):
         """Load settings from YAML file"""
@@ -1757,7 +1766,7 @@ class SerialTerminal(QMainWindow):
             # Ensure all required keys exist with defaults
             default_settings = {
                 'font': {'name': 'Monaco', 'size': 14, 'bold': False},
-                'theme': 'default',
+                'theme': 'default',  # Keep as string for consistency
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100}
             }
@@ -1778,7 +1787,7 @@ class SerialTerminal(QMainWindow):
             # Return default settings
             return {
                 'font': {'name': 'Monaco', 'size': 14, 'bold': False},
-                'theme': 'default',
+                'theme': 'default',  # Keep as string
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100}
             }

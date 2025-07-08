@@ -15,7 +15,7 @@ LIGHT_CSS_NAME              = "light"
 DARK_CSS_NAME               = "dark"
 RESOURCES_DIR               = "resources"
 
-APP_VERSION                 = "1.7.1"
+APP_VERSION                 = "1.7.2"
 COMMANDS_PREDEFINED_FILE1   = "atcmder_predefined_cmd_1.yaml"
 COMMANDS_PREDEFINED_FILE2   = "atcmder_predefined_cmd_2.yaml"
 COMMANDS_PREDEFINED_FILE3   = "atcmder_predefined_cmd_3.yaml"
