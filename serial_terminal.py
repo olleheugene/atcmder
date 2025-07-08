@@ -119,13 +119,6 @@ class SerialTerminal(QMainWindow):
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-        help_menu = menubar.addMenu("Help")
-        about_action = QAction("About", self)
-        about_action.triggered.connect(self.show_about_dialog)
-        help_menu.addAction(about_action)
-        shortcut_action = QAction("Shortcuts", self)
-        shortcut_action.triggered.connect(self.show_shortcut_list)
-        help_menu.addAction(shortcut_action)
 
         settings_menu = menubar.addMenu("Settings")
         open_settings_action = QAction("Open Settings", self)
@@ -150,6 +143,14 @@ class SerialTerminal(QMainWindow):
         self.font_size_action.setEnabled(False)
         settings_menu.addAction(self.font_size_action)
         settings_menu.addSeparator()
+
+        help_menu = menubar.addMenu("Help")
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
+        shortcut_action = QAction("Shortcuts", self)
+        shortcut_action.triggered.connect(self.show_shortcut_list)
+        help_menu.addAction(shortcut_action)
 
         self.left_widget = QWidget()
         self.left_layout = QVBoxLayout()
@@ -1815,9 +1816,6 @@ class SerialTerminal(QMainWindow):
         QMessageBox.about(
             self,
             "About ATCMDER",
-            "ATCMDER Serial Terminal v1.0\n\n"
+            f"ATCMDER Serial Terminal {utils.APP_VERSION}\n\n"
             "A feature-rich serial terminal application\n"
-            "built with PySide6.\n\n"
-            "Features include ANSI color support,\n"
-            "text search, command history, and more."
         )
