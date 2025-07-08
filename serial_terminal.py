@@ -1719,7 +1719,7 @@ class SerialTerminal(QMainWindow):
         
         # Apply output window settings
         self.terminal_widget.set_show_line_numbers(settings['output_window']['show_line_numbers'])
-        # self.terminal_widget.set_show_time(settings['output_window']['show_time'])
+        self.terminal_widget.set_show_timestamps(settings['output_window']['show_time'])
         
         # Force UI update
         self.terminal_widget.update_scrollbar()
@@ -1786,8 +1786,7 @@ class SerialTerminal(QMainWindow):
         
         # Apply output window settings
         self.terminal_widget.set_show_line_numbers(self.settings['output_window']['show_line_numbers'])
-        if hasattr(self.terminal_widget, 'set_show_time'):
-            self.terminal_widget.set_show_time(self.settings['output_window']['show_time'])
+        self.terminal_widget.set_show_timestamps(self.settings['output_window']['show_time'])
         
         # Apply theme settings
         if hasattr(self, 'apply_theme'):
@@ -1797,7 +1796,7 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.update_scrollbar()
         self.terminal_widget.viewport().update()
         
-        print(f"Initial settings applied - Line numbers: {self.settings['output_window']['show_line_numbers']}")
+        print(f"Initial settings applied - Line numbers: {self.settings['output_window']['show_line_numbers']}, Timestamps: {self.settings['output_window']['show_time']}")
 
     def show_about_dialog(self): 
         """Show about dialog"""

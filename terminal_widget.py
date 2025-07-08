@@ -70,6 +70,11 @@ class TerminalWidget(QAbstractScrollArea):
         self.show_line_numbers = False
         self.line_number_width = 0
         self.line_number_padding = 10  # Padding between line numbers and text
+        
+        # Timestamp settings
+        self.show_timestamps = False
+        self.timestamp_width = 0
+        self.timestamp_padding = 4  # Padding between timestamp and text
 
     def _toggle_cursor(self):
         """Toggle cursor visibility for blinking effect"""
@@ -118,9 +123,23 @@ class TerminalWidget(QAbstractScrollArea):
 
         text = text.replace('\r\n', '\n').replace('\r', '\n')
         lines = text.split('\n')
+        
+        # Get current timestamp
+        from datetime import datetime
+        current_time = datetime.now()
+        timestamp_str = current_time.strftime("%H:%M:%S.%f")[:-3]  # HH:MM:SS.mmm format
+        
         for i, line in enumerate(lines):
             if i > 0 or not self.lines:
                 self.lines.append([])
+                
+            # Add timestamp to the beginning of each new line if enabled
+            if self.show_timestamps and (i > 0 or not self.lines or len(self.lines) == 1):
+                # Add timestamp with a different color
+                timestamp_color = QColor(100, 100, 100)  # Gray timestamp
+                timestamp_text = f"{timestamp_str} "
+                self.lines[-1].append((timestamp_text, timestamp_color))
+            
             parsed = self.parse_ansi_text(line)
             merged = []
             for part, color in parsed:
@@ -140,6 +159,10 @@ class TerminalWidget(QAbstractScrollArea):
             if not hasattr(self, '_last_line_count') or abs(lines_count - self._last_line_count) > 10:
                 self._update_line_number_width()
                 self._last_line_count = lines_count
+        
+        # Update timestamp width if timestamps are enabled
+        if self.show_timestamps:
+            self._update_timestamp_width()
         
         # Ensure the scroll offset remains stable after adding data to avoid view shifting
         visible_lines = max(1, self.viewport().height() // self.line_height)
@@ -234,8 +257,12 @@ class TerminalWidget(QAbstractScrollArea):
         h_scroll_offset = self.horizontalScrollBar().value()
         total_lines = len(self.lines)
         
-        # Calculate text start position (after line numbers)
-        text_start_x = self.line_number_width if self.show_line_numbers else 0
+        # Calculate text start position (after line numbers and timestamps)
+        text_start_x = 0
+        if self.show_line_numbers:
+            text_start_x += self.line_number_width
+        if self.show_timestamps:
+            text_start_x += self.timestamp_width
         
         if self.auto_scroll:
             start_line = max(0, total_lines - visible_lines)
@@ -461,6 +488,23 @@ class TerminalWidget(QAbstractScrollArea):
         line_count_str = str(max_lines)
         self.line_number_width = self.font_metrics.horizontalAdvance(line_count_str) + self.line_number_padding
 
+    def _update_timestamp_width(self):
+        """Calculate the width needed for timestamps"""
+        if not self.show_timestamps:
+            self.timestamp_width = 0
+            return
+        
+        # Use a sample timestamp to calculate width
+        sample_timestamp = "12:34:56.789 "  # HH:MM:SS.mmm format without brackets
+        # self.timestamp_width = self.font_metrics.horizontalAdvance(sample_timestamp) + self.timestamp_padding
+        self.timestamp_width = self.timestamp_padding
+
+    def set_show_timestamps(self, show):
+        """Enable or disable timestamp display"""
+        self.show_timestamps = show
+        self._update_timestamp_width()
+        self.update_scrollbar()
+        self.viewport().update()
 
     def set_show_line_numbers(self, show):
         """Enable or disable line number display"""
@@ -590,14 +634,18 @@ class TerminalWidget(QAbstractScrollArea):
         if line >= len(self.lines):
             line = len(self.lines) - 1 if self.lines else 0
         
-        # Calculate text start position (after line numbers)
-        text_start_x = self.line_number_width if self.show_line_numbers else 0
+        # Calculate text start position (after line numbers and timestamps)
+        text_start_x = 0
+        if self.show_line_numbers:
+            text_start_x += self.line_number_width
+        if self.show_timestamps:
+            text_start_x += self.timestamp_width
         
-        # Adjust x position to account for line numbers
+        # Adjust x position to account for line numbers and timestamps
         x = pos.x() - 5 - text_start_x + self.horizontalScrollBar().value()
         
-        # If click is in the line number area, set column to 0
-        if self.show_line_numbers and pos.x() < text_start_x:
+        # If click is in the line number or timestamp area, set column to 0
+        if (self.show_line_numbers or self.show_timestamps) and pos.x() < text_start_x:
             return (line, 0)
         
         text = self._line_text(self.lines[line]) if self.lines else ""
@@ -684,6 +732,10 @@ class TerminalWidget(QAbstractScrollArea):
         # Update line number width if line numbers are enabled
         if self.show_line_numbers:
             self._update_line_number_width()
+        
+        # Update timestamp width if timestamps are enabled
+        if self.show_timestamps:
+            self._update_timestamp_width()
             
         self.update_scrollbar()
         self.viewport().update()
