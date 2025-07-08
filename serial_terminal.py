@@ -521,21 +521,18 @@ class SerialTerminal(QMainWindow):
 
     def handle_enter(self):
         """Handle Enter key press"""
-        # Resume output if it was frozen
-        self.terminal_widget.resume_output()
         
         self.terminal_widget.append_text("\n")
 
-        if self.current_input_buffer:
-            command_to_send = self.current_input_buffer.rstrip() + "\r\n"
-            self.serial.write(command_to_send.encode('utf-8', errors='replace'))
+        command_to_send = self.current_input_buffer.rstrip() + "\r\n"
+        self.serial.write(command_to_send.encode('utf-8', errors='replace'))
             
-            # Add to command history using utils
-            self.command_history = utils.add_to_history(
-                self.command_history, 
-                self.current_input_buffer,
-                utils.get_history_settings().get("max_count", 50)
-            )
+        # Add to command history using utils
+        self.command_history = utils.add_to_history(
+            self.command_history, 
+            self.current_input_buffer,
+            utils.get_history_settings().get("max_count", 50)
+        )
 
         # Enter key input activates auto-scrolling and moves the scrollbar to the bottom
         self.terminal_widget.set_auto_scroll(True)
