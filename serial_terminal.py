@@ -58,6 +58,9 @@ class SerialTerminal(QMainWindow):
 
     def __init__(self, port=None, baudrate=115200):
         super().__init__()
+
+        utils.prepare_default_files()
+
         self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
         self.resize(1100, 600)
         self.serial = None

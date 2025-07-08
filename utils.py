@@ -293,17 +293,17 @@ def prepare_default_files():
     if not os.path.exists(PREDEFINED_COMMAND_LIST3):
         shutil.copy(get_resources(COMMANDS_PREDEFINED_FILE3), PREDEFINED_COMMAND_LIST3)
 
-    # Create predefined command list files if they don't exist
-    for i in range(1, 4):
-        predefined_path = get_user_config_path(f"atcmder_predefined_cmd_{i}.yaml")
-        if not os.path.exists(predefined_path):
-            with open(predefined_path, "w", encoding="utf-8") as f:
-                yaml.safe_dump([], f)
+    # # Create predefined command list files if they don't exist
+    # for i in range(1, 4):
+    #     predefined_path = get_user_config_path(f"atcmder_predefined_cmd_{i}.yaml")
+    #     if not os.path.exists(predefined_path):
+    #         with open(predefined_path, "w", encoding="utf-8") as f:
+    #             yaml.safe_dump([], f)
 
-    # Create user port list if it doesn't exist
-    if not os.path.exists(USER_PORT_LIST):
-        with open(USER_PORT_LIST, "w", encoding="utf-8") as f:
-            yaml.safe_dump([], f)
+    # # Create user port list if it doesn't exist
+    # if not os.path.exists(USER_PORT_LIST):
+    #     with open(USER_PORT_LIST, "w", encoding="utf-8") as f:
+    #         yaml.safe_dump([], f)
 
 def load_command_history():
     """Load command history from YAML file"""
