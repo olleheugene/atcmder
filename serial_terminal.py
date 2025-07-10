@@ -1186,8 +1186,8 @@ class SerialTerminal(QMainWindow):
                 with open(theme_path, "r") as f:
                     style = f.read()
 
-                    # Replace the dynamic resource paths
                     down_arrow_path = utils.get_resources("down_arrow.png")
+                    down_arrow_path = down_arrow_path.replace("\\", "/")
                     style = style.replace("url(resources/down_arrow.png)", f"url({down_arrow_path})")
                     
                     QApplication.instance().setStyleSheet(style)
