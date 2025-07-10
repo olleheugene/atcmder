@@ -2,7 +2,7 @@
   checked: false
   title:
     text: ""
-    disabled: true
+    disabled: false
   time: 5.0
 - index: 1
   checked: true
