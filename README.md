@@ -6,18 +6,17 @@ For more detailed information about the supported features, please refer to the 
 
 **Support Features**
 
-1. ANSI color scheme for enhanced terminal readability
-2. Input history (up to 50 entries)
-3. Load and manage predefined AT command sets
-4. Automatic reconnection to the last 5 connected devices
-5. Sequential sending of AT commands
-6. Expandable/collapsible terminal window
-7. Shortcut keys for adjusting font size 
-   * CMD+'+' : Increase font size
-   * CMD+'-' : Decrease font size
-   * CMD+'0' : Reset font size
-8. Support for user-defined baud rates
-9. Support multiple OSes
+- 🚀 Powerful Features for a Seamless Serial Communication Experience
+- 🌈 Rich ANSI Color Support – Clear, vivid terminal output
+- 🕘 Command History – Easily reuse previously entered commands. It can be used next time execution as well
+- 📋 Predefined Command Lists – Load and manage custom command sets with ease
+- 🔌 Auto Reconnect – Instantly reconnects to your last-used serial port
+- 📄 Sequential Command Execution – Automate multi-step test
+- 🪟 Expandable Output Window – Clean and flexible UI layout
+- ⌨️ Keyboard Shortcuts – Speed up your workflow
+- 🖥️ Cross-Platform – Compatible with macOS, Windows, and Linux
+- 🎨 Customizable Themes – Style your interface with CSS-based theming
+- 🧾 Line Numbers & Timestamps – Better tracking and debugging in the terminal
 
 
 ![main](./readme/introduction.gif)
