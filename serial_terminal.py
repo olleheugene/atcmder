@@ -158,10 +158,11 @@ class SerialTerminal(QMainWindow):
         self.serial_group = QGroupBox("Serial Settings")
         serial_group_layout = QVBoxLayout()
         serial_group_layout.setSpacing(0)
-        serial_group_layout.setContentsMargins(0, 0, 0, 0)
+        # serial_group_layout.setContentsMargins(0, 0, 0, 0)
 
         self.serial_port_combo = QComboBox()
         self.serial_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.serial_port_combo.setEditable(True)
         port_layout = QHBoxLayout()
         port_layout.setSpacing(0)
         port_layout.setContentsMargins(0, 0, 0, 0)
@@ -173,8 +174,8 @@ class SerialTerminal(QMainWindow):
 
         self.serial_port_combo.currentTextChanged.connect(self.on_port_changed)
         baud_btn_layout = QHBoxLayout()
-        baud_btn_layout.setSpacing(0)
-        baud_btn_layout.setContentsMargins(10, 0, 10, 0)
+        baud_btn_layout.setSpacing(5)
+        baud_btn_layout.setContentsMargins(20, 0, 10, 0)
         self.baudrate_combo = QComboBox()
         baudrates = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000"]
         self.baudrate_combo.addItems(baudrates)
@@ -191,7 +192,7 @@ class SerialTerminal(QMainWindow):
         self.connect_btn.setToolTip(f"Connect to selected port")
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh_serial_ports)
-        self.refresh_btn.setFixedWidth(70) 
+        self.refresh_btn.setFixedWidth(80) 
         self.baud_label = QLabel("Baudrate:")
         baud_btn_layout.addWidget(self.baud_label)
         baud_btn_layout.addWidget(self.baudrate_combo)
@@ -1269,7 +1270,7 @@ class SerialTerminal(QMainWindow):
 
         if horizontal:
             layout = QHBoxLayout()
-            layout.setSpacing(0)
+            layout.setSpacing(10)
             layout.setContentsMargins(5, 2, 5, 2)
             
             layout.addWidget(self.port_label)
@@ -1280,8 +1281,10 @@ class SerialTerminal(QMainWindow):
             layout.addWidget(self.refresh_btn)
 
             self.serial_group.setTitle("")
-            self.serial_group.setMinimumWidth(450) 
-            self.serial_group.setMinimumHeight(45)
+            self.serial_group.setMinimumWidth(700) 
+            # self.serial_group.setMinimumHeight(70)
+
+            self.serial_port_combo.setMinimumWidth(200) 
         else:
             layout = QVBoxLayout()
             layout.setSpacing(0)
@@ -1305,8 +1308,8 @@ class SerialTerminal(QMainWindow):
 
             self.serial_group.setTitle("Serial Settings")
             self.serial_group.setMinimumWidth(0)
-            self.serial_group.setMinimumHeight(0)
-            
+            # self.serial_group.setMinimumHeight(90)
+
         self.serial_group.setLayout(layout)
 
     def toggle_left_panel(self):
