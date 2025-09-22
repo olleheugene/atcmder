@@ -48,31 +48,6 @@ class FontTab(QWidget):
         settings['font']['size'] = self.font_size_spin.value()
         settings['font']['bold'] = self.font_bold_check.isChecked()
 
-class ThemeTab(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-
-        # Theme settings
-        theme_group = QGroupBox("Theme Settings")
-        theme_layout = QFormLayout()
-
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["default", "dark", "light"])
-        theme_layout.addRow("Theme:", self.theme_combo)
-
-        theme_group.setLayout(theme_layout)
-        layout.addWidget(theme_group)
-
-        layout.addStretch()
-        self.setLayout(layout)
-
-    def load_settings(self, settings):
-        self.theme_combo.setCurrentText(settings.get('theme', 'default'))
-
-    def save_settings(self, settings):
-        settings['theme'] = self.theme_combo.currentText()
-
 class OutputTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -175,6 +150,83 @@ class HistoryTab(QWidget):
         current_history = utils.load_command_history()
         utils.save_command_history(current_history, self.max_count_spin.value())
 
+class WindowsTab(QWidget):
+    def __init__(self, parent_dialog=None):
+        super().__init__()
+        self.parent_dialog = parent_dialog
+        layout = QVBoxLayout()
+        
+        # Theme settings
+        theme_group = QGroupBox("Theme Settings")
+        theme_layout = QFormLayout()
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["default", "dark", "light"])
+        theme_layout.addRow("Theme:", self.theme_combo)
+
+        theme_group.setLayout(theme_layout)
+        layout.addWidget(theme_group)
+        
+        # Command Group settings
+        command_group = QGroupBox("Command Group Settings")
+        command_layout = QFormLayout()
+        
+        self.command_group_spin = QSpinBox()
+        self.command_group_spin.setRange(3, 10)
+        self.command_group_spin.setValue(3)  # default value
+        command_layout.addRow("Number of Command Groups:", self.command_group_spin)
+        
+        # Description label
+        info_label = QLabel("Set the number of command group buttons to display.\nRange: 3 to 10 buttons")
+        info_label.setStyleSheet("color: #666; font-size: 11px;")
+        command_layout.addRow(info_label)
+        
+        command_group.setLayout(command_layout)
+        layout.addWidget(command_group)
+        
+        layout.addStretch()
+        self.setLayout(layout)
+    
+    def load_settings(self, settings):
+        # Load Theme setting
+        self.theme_combo.setCurrentText(settings.get('theme', 'default'))
+        
+        # Load Command Group count
+        try:
+            import yaml
+            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+
+            # Find command_group_count at the top level
+            if "command_group_count" in data:
+                count = data["command_group_count"]
+                self.command_group_spin.setValue(max(3, min(10, count)))
+                return
+
+            self.command_group_spin.setValue(3)  # default value
+        except Exception:
+            self.command_group_spin.setValue(3)  # default value
+
+    def save_settings(self, settings):
+        # Save Theme setting
+        settings['theme'] = self.theme_combo.currentText()
+        
+        # Save Command Group count and update UI
+        new_count = self.command_group_spin.value()
+        
+        try:
+            # Save to settings dictionary (saved to file in settings_dialog.py's save_settings)
+            settings["command_group_count"] = new_count
+
+            # Update Command Group buttons in parent window
+            if (self.parent_dialog and
+                hasattr(self.parent_dialog, 'parent_window') and
+                self.parent_dialog.parent_window and
+                hasattr(self.parent_dialog.parent_window, 'update_command_group_buttons')):
+                self.parent_dialog.parent_window.update_command_group_buttons(new_count)
+        except Exception as e:
+            print(f"Warning: Could not update command group buttons: {e}")
+
 class SettingsDialog(QDialog):
     def __init__(self, parent=None, settings_path=None, on_settings_changed=None):
         super().__init__(parent)
@@ -183,6 +235,7 @@ class SettingsDialog(QDialog):
         self.parent_window = parent  # Store parent reference
         self.setWindowTitle("Settings")
         self.resize(500, 400)
+        self.setModal(True)  # Set as modal dialog
         
         layout = QVBoxLayout()
         
@@ -191,15 +244,15 @@ class SettingsDialog(QDialog):
         
         # Create tabs
         self.font_tab = FontTab()
-        self.theme_tab = ThemeTab()
         self.output_tab = OutputTab()
         self.history_tab = HistoryTab()
+        self.windows_tab = WindowsTab(self)  # Pass parent dialog reference
         
         # Add tabs
         self.tab_widget.addTab(self.font_tab, "Font")
-        self.tab_widget.addTab(self.theme_tab, "Theme")
         self.tab_widget.addTab(self.output_tab, "Output Window")
         self.tab_widget.addTab(self.history_tab, "History")
+        self.tab_widget.addTab(self.windows_tab, "Windows")
         
         layout.addWidget(self.tab_widget)
         
@@ -213,7 +266,7 @@ class SettingsDialog(QDialog):
         
         self.apply_btn.clicked.connect(self.apply_settings)
         self.ok_btn.clicked.connect(self.accept_settings)
-        self.cancel_btn.clicked.connect(self.reject)
+        self.cancel_btn.clicked.connect(self.cancel_settings)
         
         button_layout.addWidget(self.apply_btn)
         button_layout.addWidget(self.ok_btn)
@@ -248,7 +301,13 @@ class SettingsDialog(QDialog):
                 
                 # Convert list of dicts to flat dict for easy access
                 settings = {}
-                if isinstance(data, list):
+
+                # Check if new format (dictionary) is used
+                if isinstance(data, dict):
+                    # New format - use keys directly
+                    settings = data.copy()
+                elif isinstance(data, list):
+                    # Old format - extract from list
                     for item in data:
                         if isinstance(item, dict):
                             if 'font' in item:
@@ -275,9 +334,9 @@ class SettingsDialog(QDialog):
         
         # Load settings into tabs
         self.font_tab.load_settings(settings)
-        self.theme_tab.load_settings(settings)
         self.output_tab.load_settings(settings)
         self.history_tab.load_settings(settings)
+        self.windows_tab.load_settings(settings)
         
         return settings
 
@@ -288,16 +347,32 @@ class SettingsDialog(QDialog):
         
         # Update settings from tabs
         self.font_tab.save_settings(self.settings)
-        self.theme_tab.save_settings(self.settings)
         self.output_tab.save_settings(self.settings)
         self.history_tab.save_settings(self.settings)
+        self.windows_tab.save_settings(self.settings)
         
         try:
-            # Save settings back to YAML in list format
-            data = []
-            data.append({'font': self.settings['font']})
-            data.append({'theme': self.settings['theme']})
-            data.append({'output_window': self.settings['output_window']})
+            # Check if existing file is present and determine structure
+            existing_data = {}
+            is_new_format = False
+            
+            if os.path.exists(self.settings_path):
+                with open(self.settings_path, "r", encoding="utf-8") as f:
+                    existing_data = yaml.safe_load(f) or {}
+                    
+                if isinstance(existing_data, dict) and "command_group_count" in existing_data:
+                    is_new_format = True
+                else:
+                    is_new_format = False
+
+            # Save in new format (use top-level keys)
+            data = {}
+            data['font'] = self.settings['font']
+            data['theme'] = self.settings['theme']
+            data['output_window'] = self.settings['output_window']
+            
+            if 'command_group_count' in self.settings:
+                data['command_group_count'] = self.settings['command_group_count']
             
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
@@ -310,20 +385,31 @@ class SettingsDialog(QDialog):
 
     def apply_settings(self):
         """Apply settings immediately to the UI"""
-        # Update settings from tabs first
-        self.font_tab.save_settings(self.settings)
-        self.theme_tab.save_settings(self.settings)
-        self.output_tab.save_settings(self.settings)
-        self.history_tab.save_settings(self.settings)
-        
-        # Save to file
-        self.save_settings()
-        
-        # Call parent's apply_settings if callback is provided
-        if self.on_settings_changed:
-            self.on_settings_changed(self.settings)
+        try:
+            # Update settings from tabs first
+            self.font_tab.save_settings(self.settings)
+            self.output_tab.save_settings(self.settings)
+            self.history_tab.save_settings(self.settings)
+            self.windows_tab.save_settings(self.settings)
+            
+            # Save to file
+            self.save_settings()
+            
+            # Call parent's apply_settings if callback is provided
+            if self.on_settings_changed:
+                self.on_settings_changed(self.settings)
+        except Exception as e:
+            print(f"Error applying settings: {e}")
 
     def accept_settings(self):
         """Apply settings and close dialog"""
-        self.apply_settings()
-        self.accept()
+        try:
+            self.apply_settings()
+            self.accept()
+        except Exception as e:
+            print(f"Error accepting settings: {e}")
+            self.accept()
+    
+    def cancel_settings(self):
+        """Cancel settings and close dialog"""
+        self.reject()

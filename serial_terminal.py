@@ -98,6 +98,11 @@ class SerialTerminal(QMainWindow):
         self.baudrate = baudrate
         self.status = self.statusBar()
         self.update_status_bar("Disconnected")
+        
+        # Load command group count
+        self.command_group_count = self.load_command_group_count()
+        self.command_group_buttons = []
+        
         self.author_label = QLabel("By OllehEugene")
         self.author_label.setStyleSheet("color: #888; margin-left: 12px;")
         self.status.addPermanentWidget(self.author_label)
@@ -228,6 +233,11 @@ class SerialTerminal(QMainWindow):
         cmd_actions_layout.addWidget(predefine_btn1)
         cmd_actions_layout.addWidget(predefine_btn2)
         cmd_actions_layout.addWidget(predefine_btn3)
+        
+        # Create buttons
+        self.cmd_actions_layout = cmd_actions_layout
+        self.command_group_buttons = [predefine_btn1, predefine_btn2, predefine_btn3]
+        self.create_additional_command_buttons()
         
         cmd_actions_group.setLayout(cmd_actions_layout)
         self.left_widget_layout.addWidget(cmd_actions_group)
@@ -837,30 +847,22 @@ class SerialTerminal(QMainWindow):
         """Save the last loaded YAML file path to settings"""
         try:
             # Load existing settings first
-            settings = []
+            settings = {}
             if os.path.exists(utils.USER_SETTINGS):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = yaml.safe_load(f)
-                    if not isinstance(settings, list):
-                        settings = []
+                        data = yaml.safe_load(f) or {}
+
+                    if isinstance(data, dict):
+                        settings = data.copy()
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict):
+                                settings.update(item)
                 except Exception:
-                    settings = []
+                    settings = {}
             
-            # Find existing selected_commandlist_file object and update it
-            config_file_found = False
-            for item in settings:
-                if isinstance(item, dict) and "last_cmdlist_file" in item:
-                    item["last_cmdlist_file"] = file_path
-                    config_file_found = True
-                    break
-            
-            # If no last_cmdlist_file object found, add new one
-            if not config_file_found:
-                config_file_obj = {
-                    "last_cmdlist_file": file_path
-                }
-                settings.append(config_file_obj)
+            settings["last_cmdlist_file"] = file_path
             
             # Save back to file
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
@@ -872,14 +874,16 @@ class SerialTerminal(QMainWindow):
         """Load the last used YAML file path from settings"""
         try:
             with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                settings = yaml.safe_load(f)
+                data = yaml.safe_load(f) or {}
                 
-                # Find last_cmdlist_file in the list
-                for item in settings:
+            if isinstance(data, dict):
+                return data.get("last_cmdlist_file")
+            elif isinstance(data, list):
+                for item in data:
                     if isinstance(item, dict) and "last_cmdlist_file" in item:
                         return item["last_cmdlist_file"]
                 
-                return None
+            return None
         except Exception:
             return None
 
@@ -918,8 +922,8 @@ class SerialTerminal(QMainWindow):
             if selected_files:
                 config_file_path = selected_files[0]
                 
-                # Ask user which button to assign this file to
-                items = ["1", "2", "3"]
+                # Ask user which button to assign this file to (1~10)
+                items = [str(i) for i in range(1, self.command_group_count + 1)]
                 item, ok = QInputDialog.getItem(self, "Assign Command List", 
                                                 "Assign this list to which button?", items, 0, False)
                 
@@ -939,6 +943,17 @@ class SerialTerminal(QMainWindow):
         
         if file_path and os.path.exists(file_path):
             self.load_and_validate_config_file(file_path, popup=False)
+        elif file_path and button_number >= 4:
+            try:
+                self.create_empty_command_file(file_path, button_number)
+                self.load_and_validate_config_file(file_path, popup=False)
+                self.update_status_bar(f"Created new command list file for button {button_number}")
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "File Creation Error",
+                    f"Could not create command list file for button {button_number}:\n{str(e)}"
+                )
         else:
             QMessageBox.warning(
                 self, 
@@ -948,23 +963,24 @@ class SerialTerminal(QMainWindow):
 
     def save_predefined_cmd_mappings(self):
         """Save the current command list mappings to settings."""
-        settings = []
+        settings = {}
+        
         if os.path.exists(utils.USER_SETTINGS):
             try:
                 with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                    settings = yaml.safe_load(f) or []
-            except Exception:
-                settings = []
+                    data = yaml.safe_load(f) or {}
 
-        mapping_found = False
-        for item in settings:
-            if isinstance(item, dict) and "predefined_cmd_mappings" in item:
-                item["predefined_cmd_mappings"] = self.predefined_cmd_mappings
-                mapping_found = True
-                break
-        
-        if not mapping_found:
-            settings.append({"predefined_cmd_mappings": self.predefined_cmd_mappings})
+                if isinstance(data, dict):
+                    settings = data.copy()
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            settings.update(item)
+            except Exception:
+                settings = {}
+
+        # store predefined_cmd_mappings
+        settings["predefined_cmd_mappings"] = self.predefined_cmd_mappings
 
         try:
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
@@ -974,30 +990,32 @@ class SerialTerminal(QMainWindow):
 
     def load_predefined_cmd_mappings(self):
         """Load command list mappings from settings or set defaults."""
-        settings = []
+        settings = {}
+        
         if os.path.exists(utils.USER_SETTINGS):
             try:
                 with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                    settings = yaml.safe_load(f) or []
-            except Exception:
-                settings = []
+                    data = yaml.safe_load(f) or {}
 
-        mapping_found = False
-        for item in settings:
-            if isinstance(item, dict) and "predefined_cmd_mappings" in item:
-                self.predefined_cmd_mappings = item["predefined_cmd_mappings"]
-                # Ensure keys are integers
-                self.predefined_cmd_mappings = {int(k): v for k, v in self.predefined_cmd_mappings.items()}
-                mapping_found = True
-                break
-        
-        if not mapping_found:
+                if isinstance(data, dict):
+                    settings = data.copy()
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            settings.update(item)
+            except Exception:
+                settings = {}
+
+        # Load predefined_cmd_mappings
+        if "predefined_cmd_mappings" in settings:
+            self.predefined_cmd_mappings = settings["predefined_cmd_mappings"]
+            # Ensure keys are integers
+            self.predefined_cmd_mappings = {int(k): v for k, v in self.predefined_cmd_mappings.items()}
+        else:
             # Set default mappings if not found
-            self.predefined_cmd_mappings = {
-                1: utils.get_user_config_path("atcmder_predefined_cmd_1.yaml"),
-                2: utils.get_user_config_path("atcmder_predefined_cmd_2.yaml"),
-                3: utils.get_user_config_path("atcmder_predefined_cmd_3.yaml"),
-            }
+            self.predefined_cmd_mappings = {}
+            for i in range(1, 11):
+                self.predefined_cmd_mappings[i] = utils.get_user_config_path(f"atcmder_predefined_cmd_{i}.yaml")
             self.save_predefined_cmd_mappings()
 
     def validate_config_structure(self, data):
@@ -1599,35 +1617,30 @@ class SerialTerminal(QMainWindow):
         """Save current font settings to file"""
         try:
             # Load existing settings first
-            settings = []
+            settings = {}
             if os.path.exists(utils.USER_SETTINGS):
                 try:
                     with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        settings = yaml.safe_load(f)
-                    if not isinstance(settings, list):
-                        settings = []
+                        data = yaml.safe_load(f) or {}
+                        
+                    if isinstance(data, dict):
+                        settings = data.copy()
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict):
+                                settings.update(item)
                 except Exception:
-                    settings = []
+                    settings = {}
             
-            # Find existing font object and update it
-            font_found = False
-            for item in settings:
-                if isinstance(item, dict) and "font" in item:
-                    # Update only the size, keep other font properties
-                    item["font"]["size"] = self.font_size
-                    font_found = True
-                    break
-            
-            # If no font object found, add new one
-            if not font_found:
-                font_obj = {
-                    "font": {
-                        "name": "Monaco",
-                        "size": self.font_size,
-                        "bold": False
-                    }
+            if "font" not in settings:
+                settings["font"] = {
+                    "name": "Monaco",
+                    "size": self.font_size,
+                    "bold": False
                 }
-                settings.append(font_obj)
+            else:
+                # Update only the size, keep other font properties
+                settings["font"]["size"] = self.font_size
             
             # Save back to file
             with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
@@ -1838,3 +1851,100 @@ class SerialTerminal(QMainWindow):
             f"ATCMDER Serial Terminal {utils.APP_VERSION}\n\n"
             "A feature-rich serial terminal application\n"
         )
+
+    def load_command_group_count(self):
+        """Load number of command groups from settings"""
+        try:
+            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            
+            if isinstance(data, dict) and "command_group_count" in data:
+                count = data["command_group_count"]
+                return max(3, min(10, count))
+            
+            return 3
+        except Exception:
+            return 3
+
+    def save_command_group_count(self, count):
+        """Save number of command groups to settings"""
+        try:
+            # Load existing settings
+            data = {}
+            if os.path.exists(utils.USER_SETTINGS):
+                with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+
+            # Update command_group_count
+            data["command_group_count"] = count
+
+            # Save to settings file
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
+                yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+                
+        except Exception as e:
+            print(f"Warning: Could not save command group count: {e}")
+
+    def create_additional_command_buttons(self):
+        """Create additional Command Group buttons based on settings"""
+        # Create buttons from 4 to the configured number
+        for i in range(4, self.command_group_count + 1):
+            button = QPushButton(str(i))
+            button.setShortcut(f"Alt+Ctrl+{i}")
+            button.setToolTip(f"Load predefined command list {i}")
+            button.clicked.connect(lambda checked, num=i: self.load_mapped_command_list(num))
+            
+            self.cmd_actions_layout.addWidget(button)
+            self.command_group_buttons.append(button)
+
+    def update_command_group_buttons(self, new_count):
+        """Update Command Group button count"""
+        current_count = len(self.command_group_buttons)
+        
+        if new_count > current_count:
+            # Add buttons
+            for i in range(current_count + 1, new_count + 1):
+                button = QPushButton(str(i))
+                button.setShortcut(f"Alt+Ctrl+{i}")
+                button.setToolTip(f"Load predefined command list {i}")
+                button.clicked.connect(lambda checked, num=i: self.load_mapped_command_list(num))
+                
+                self.cmd_actions_layout.addWidget(button)
+                self.command_group_buttons.append(button)
+        
+        elif new_count < current_count:
+            # Remove buttons
+            for i in range(current_count - 1, new_count - 1, -1):
+                button = self.command_group_buttons.pop()
+                self.cmd_actions_layout.removeWidget(button)
+                button.deleteLater()
+        
+        self.command_group_count = new_count
+        self.save_command_group_count(new_count)
+
+    def create_empty_command_file(self, file_path, button_number):
+        """Create empty Command file for buttons 4 to 10"""
+        # Basic empty Command list structure
+        empty_commands = []
+        
+        # Create 10 empty command slots
+        for i in range(10):
+            command_item = {
+                "index": i,
+                "checked": False,
+                "title": {
+                    "text": f"Command {i+1}",
+                    "disabled": False
+                },
+                "time": 0.5
+            }
+            empty_commands.append(command_item)
+
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        # Save as YAML file
+        with open(file_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(empty_commands, f, allow_unicode=True, sort_keys=False)
+        
+        print(f"Created empty command file: {file_path}")
