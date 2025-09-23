@@ -6,55 +6,55 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox, QLabel, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont  # QFont import 추가
+from PySide6.QtGui import QFont 
 import utils
 
 SETTINGS_PATH = os.path.join(
     os.path.dirname(__file__), "resources", "atcmder_settings.yaml"
 )
 
-class FontTab(QWidget):
+class OutputTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
 
         # Font settings
         font_group = QGroupBox("Font Settings")
-        font_layout = QFormLayout()
+        font_layout = QVBoxLayout()
 
+        # Font name
+        font_name_layout = QHBoxLayout()
+        font_name_label = QLabel("Font:")
         self.font_combo = QFontComboBox()
-        font_layout.addRow("Font:", self.font_combo)
+        font_name_layout.addWidget(font_name_label)
+        font_name_layout.addWidget(self.font_combo)
+        font_name_layout.addStretch()
+        font_layout.addLayout(font_name_layout)
 
+        # Font size
+        font_size_layout = QHBoxLayout()
+        font_size_label = QLabel("Font Size:")
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(6, 32)
-        font_layout.addRow("Font Size:", self.font_size_spin)
+        self.font_size_spin.setMinimumWidth(70)
 
+        font_size_layout.addWidget(font_size_label)
+        font_size_layout.addWidget(self.font_size_spin)
+        font_size_layout.addStretch()
+        font_layout.addLayout(font_size_layout)
+
+        # Font bold
+        font_bold_layout = QHBoxLayout()
         self.font_bold_check = QCheckBox("Bold")
-        font_layout.addRow(self.font_bold_check)
+        font_bold_layout.addWidget(self.font_bold_check)
+        font_bold_layout.addStretch()
+        font_layout.addLayout(font_bold_layout)
 
         font_group.setLayout(font_layout)
         layout.addWidget(font_group)
 
-        layout.addStretch()
-        self.setLayout(layout)
-
-    def load_settings(self, settings):
-        self.font_combo.setCurrentText(settings['font']['name'])
-        self.font_size_spin.setValue(settings['font']['size'])
-        self.font_bold_check.setChecked(settings['font'].get('bold', False))
-
-    def save_settings(self, settings):
-        settings['font']['name'] = self.font_combo.currentText()
-        settings['font']['size'] = self.font_size_spin.value()
-        settings['font']['bold'] = self.font_bold_check.isChecked()
-
-class OutputTab(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-
         # Output window settings
-        output_group = QGroupBox("Output Window Settings")
+        output_group = QGroupBox("Terminal Window Settings")
         output_layout = QFormLayout()
 
         self.line_number_check = QCheckBox("Show Line Numbers")
@@ -66,22 +66,6 @@ class OutputTab(QWidget):
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
 
-        layout.addStretch()
-        self.setLayout(layout)
-
-    def load_settings(self, settings):
-        self.line_number_check.setChecked(settings.get('output_window', {}).get('show_line_numbers', False))
-        self.show_time_check.setChecked(settings.get('output_window', {}).get('show_time', False))
-
-    def save_settings(self, settings):
-        settings['output_window']['show_line_numbers'] = self.line_number_check.isChecked()
-        settings['output_window']['show_time'] = self.show_time_check.isChecked()
-
-class HistoryTab(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-        
         # History settings
         history_group = QGroupBox("History Settings")
         history_layout = QFormLayout()
@@ -89,6 +73,7 @@ class HistoryTab(QWidget):
         self.max_count_spin = QSpinBox()
         self.max_count_spin.setRange(10, 1000)
         self.max_count_spin.setValue(50)
+        self.max_count_spin.setMinimumWidth(70)
         history_layout.addRow("Maximum History Count:", self.max_count_spin)
         
         self.auto_save_check = QCheckBox("Auto-save history")
@@ -113,10 +98,10 @@ class HistoryTab(QWidget):
         
         management_group.setLayout(management_layout)
         layout.addWidget(management_group)
-        
+
         layout.addStretch()
         self.setLayout(layout)
-    
+
     def clear_history(self):
         reply = QMessageBox.question(
             self, 
@@ -136,17 +121,36 @@ class HistoryTab(QWidget):
         import utils
         history = utils.load_command_history()
         self.history_count_label.setText(f"Current history entries: {len(history)}")
-    
+
     def load_settings(self, settings):
+        # Load font settings
+        self.font_combo.setCurrentText(settings['font']['name'])
+        self.font_size_spin.setValue(settings['font']['size'])
+        self.font_bold_check.setChecked(settings['font'].get('bold', False))
+        
+        # Load output window settings
+        self.line_number_check.setChecked(settings.get('output_window', {}).get('show_line_numbers', False))
+        self.show_time_check.setChecked(settings.get('output_window', {}).get('show_time', False))
+        
+        # Load history settings
         import utils
         history_settings = utils.get_history_settings()
         self.max_count_spin.setValue(history_settings.get("max_count", 50))
         self.auto_save_check.setChecked(history_settings.get("auto_save", True))
         self.update_history_count()
-    
+
     def save_settings(self, settings):
-        import utils
+        # Save font settings
+        settings['font']['name'] = self.font_combo.currentText()
+        settings['font']['size'] = self.font_size_spin.value()
+        settings['font']['bold'] = self.font_bold_check.isChecked()
+        
+        # Save output window settings
+        settings['output_window']['show_line_numbers'] = self.line_number_check.isChecked()
+        settings['output_window']['show_time'] = self.show_time_check.isChecked()
+        
         # Save history settings
+        import utils
         current_history = utils.load_command_history()
         utils.save_command_history(current_history, self.max_count_spin.value())
 
@@ -158,11 +162,17 @@ class WindowsTab(QWidget):
         
         # Theme settings
         theme_group = QGroupBox("Theme Settings")
-        theme_layout = QFormLayout()
+        theme_layout = QVBoxLayout()
 
+        # Theme selection
+        theme_selection_layout = QHBoxLayout()
+        theme_label = QLabel("Theme:")
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["default", "dark", "light"])
-        theme_layout.addRow("Theme:", self.theme_combo)
+        theme_selection_layout.addWidget(theme_label)
+        theme_selection_layout.addWidget(self.theme_combo)
+        theme_selection_layout.addStretch()
+        theme_layout.addLayout(theme_selection_layout)
 
         theme_group.setLayout(theme_layout)
         layout.addWidget(theme_group)
@@ -173,7 +183,8 @@ class WindowsTab(QWidget):
         
         self.command_group_spin = QSpinBox()
         self.command_group_spin.setRange(3, 10)
-        self.command_group_spin.setValue(3)  # default value
+        self.command_group_spin.setValue(3)
+        self.command_group_spin.setMinimumWidth(70)
         command_layout.addRow("Number of Command Groups:", self.command_group_spin)
         
         # Description label
@@ -243,16 +254,12 @@ class SettingsDialog(QDialog):
         self.tab_widget = QTabWidget()
         
         # Create tabs
-        self.font_tab = FontTab()
         self.output_tab = OutputTab()
-        self.history_tab = HistoryTab()
         self.windows_tab = WindowsTab(self)  # Pass parent dialog reference
         
         # Add tabs
-        self.tab_widget.addTab(self.font_tab, "Font")
-        self.tab_widget.addTab(self.output_tab, "Output Window")
-        self.tab_widget.addTab(self.history_tab, "History")
-        self.tab_widget.addTab(self.windows_tab, "Windows")
+        self.tab_widget.addTab(self.output_tab, "Terminal")
+        self.tab_widget.addTab(self.windows_tab, "Window")
         
         layout.addWidget(self.tab_widget)
         
@@ -333,9 +340,7 @@ class SettingsDialog(QDialog):
                 }
         
         # Load settings into tabs
-        self.font_tab.load_settings(settings)
         self.output_tab.load_settings(settings)
-        self.history_tab.load_settings(settings)
         self.windows_tab.load_settings(settings)
         
         return settings
@@ -346,9 +351,7 @@ class SettingsDialog(QDialog):
             return
         
         # Update settings from tabs
-        self.font_tab.save_settings(self.settings)
         self.output_tab.save_settings(self.settings)
-        self.history_tab.save_settings(self.settings)
         self.windows_tab.save_settings(self.settings)
         
         try:
@@ -387,9 +390,7 @@ class SettingsDialog(QDialog):
         """Apply settings immediately to the UI"""
         try:
             # Update settings from tabs first
-            self.font_tab.save_settings(self.settings)
             self.output_tab.save_settings(self.settings)
-            self.history_tab.save_settings(self.settings)
             self.windows_tab.save_settings(self.settings)
             
             # Save to file
