@@ -213,6 +213,7 @@ class SerialTerminal(QMainWindow):
         # --- Add button group for predefined commands ---
         cmd_actions_group = QGroupBox("Command Groups")
         cmd_actions_layout = QHBoxLayout()
+        cmd_actions_layout.setSpacing(4)
         
         predefine_btn1 = QPushButton("1")
         predefine_btn2 = QPushButton("2")
@@ -339,6 +340,9 @@ class SerialTerminal(QMainWindow):
         # Load settings first
         self.settings = self.load_settings()
         self.apply_initial_settings()
+        
+        # Initialize command group button styles
+        self.update_command_group_button_styles()
 
     def eventFilter(self, obj, event):
         key = None
@@ -943,10 +947,14 @@ class SerialTerminal(QMainWindow):
         
         if file_path and os.path.exists(file_path):
             self.load_and_validate_config_file(file_path, popup=False)
+            self.current_command_group = button_number
+            self.update_command_group_button_styles()
         elif file_path and button_number >= 4:
             try:
                 self.create_empty_command_file(file_path, button_number)
                 self.load_and_validate_config_file(file_path, popup=False)
+                self.current_command_group = button_number
+                self.update_command_group_button_styles()
                 self.update_status_bar(f"Created new command list file for button {button_number}")
             except Exception as e:
                 QMessageBox.warning(
@@ -960,6 +968,27 @@ class SerialTerminal(QMainWindow):
                 "File Not Found", 
                 f"The command list file mapped to button {button_number} was not found:\n{file_path}"
             )
+
+    def update_command_group_button_styles(self):
+        """Update command group button styles to show selected button with subtle indicator"""
+        for i, button in enumerate(self.command_group_buttons):
+            button_number = i + 1
+            if button_number == self.current_command_group:
+                # Selected button style - subtle blue border and underline
+                button.setStyleSheet("""
+                    QPushButton {
+                        border: 2px solid #4a90e2;
+                        border-radius: 4px;
+                        font-weight: bold;
+                        text-decoration: underline;
+                    }
+                    QPushButton:hover {
+                        background-color: #f0f8ff;
+                    }
+                """)
+            else:
+                # Normal button style - reset to default
+                button.setStyleSheet("")
 
     def save_predefined_cmd_mappings(self):
         """Save the current command list mappings to settings."""
@@ -1921,6 +1950,9 @@ class SerialTerminal(QMainWindow):
         
         self.command_group_count = new_count
         self.save_command_group_count(new_count)
+        
+        # Update button styles to reflect current selection
+        self.update_command_group_button_styles()
 
     def create_empty_command_file(self, file_path, button_number):
         """Create empty Command file for buttons 4 to 10"""
