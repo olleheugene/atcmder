@@ -1,4 +1,5 @@
 import os
+import sys
 import serial
 import threading
 import time
@@ -87,6 +88,7 @@ class SerialTerminal(QMainWindow):
         self.current_cmdlist_file = None
         self.full_command_list = []
         self.current_page = 0
+        self.current_command_group = 1
         self.predefined_cmd_mappings = {}
         self.load_predefined_cmd_mappings()
         self.font_size = self.load_font_settings().get("size", 14)
@@ -945,6 +947,11 @@ class SerialTerminal(QMainWindow):
         """Loads the command list file mapped to the given button number."""
         file_path = self.predefined_cmd_mappings.get(button_number)
         
+        if not file_path and button_number >= 4:
+            file_path = utils.get_user_config_path(f"atcmder_predefined_cmd_{button_number}.yaml")
+            self.predefined_cmd_mappings[button_number] = file_path
+            self.save_predefined_cmd_mappings()
+        
         if file_path and os.path.exists(file_path):
             self.load_and_validate_config_file(file_path, popup=False)
             self.current_command_group = button_number
@@ -1102,7 +1109,7 @@ class SerialTerminal(QMainWindow):
             is_valid, message = self.validate_config_structure(data)
             
             if not is_valid:
-                QMessageBox.critical(self, "Invalid File", f"The file content is invalid: {message}")
+                self.handle_yaml_file_error(file_path, f"Invalid File Structure: {message}")
                 return
 
             # Truncate if more than LINEEDIT_MAX_NUMBER
@@ -1134,11 +1141,7 @@ class SerialTerminal(QMainWindow):
             self.save_selected_config_filepath(file_path)
         
         except yaml.YAMLError as e:
-            QMessageBox.critical(
-                self, 
-                "YAML Parse Error", 
-                f"The selected file is not a valid\n\nPlease select a valid YAML file."
-            )
+            self.handle_yaml_file_error(file_path, f"YAML Parse Error: {str(e)}")
         except FileNotFoundError:
             QMessageBox.critical(
                 self, 
@@ -1146,10 +1149,71 @@ class SerialTerminal(QMainWindow):
                 "The selected file could not be found."
             )
         except Exception as e:
-            QMessageBox.critical(
-                self, 
-                "Error", 
-                f"An error occurred while loading the file:\n\n{str(e)}"
+            self.handle_yaml_file_error(file_path, f"File Error: {str(e)}")
+
+    def handle_yaml_file_error(self, file_path, error_message):
+        """Handle YAML file errors with options to edit file or open folder"""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("YAML File Error")
+        msg.setText(f"Error loading command file:\n{os.path.basename(file_path)}")
+        msg.setDetailedText(f"File: {file_path}\n\nError: {error_message}")
+        
+        # Add custom buttons
+        edit_button = msg.addButton("Edit File", QMessageBox.ActionRole)
+        folder_button = msg.addButton("Open Folder", QMessageBox.ActionRole)
+        cancel_button = msg.addButton("Cancel", QMessageBox.RejectRole)
+        
+        msg.exec()
+        
+        if msg.clickedButton() == edit_button:
+            self.open_yaml_editor(file_path)
+        elif msg.clickedButton() == folder_button:
+            self.open_file_location(file_path)
+
+    def open_yaml_editor(self, file_path):
+        """Open YAML editor for the specified file"""
+        try:
+            editor = YamlEditorDialog(file_path, self)
+            if editor.exec() == QDialog.Accepted:
+                # Try to reload the file after editing
+                self.load_and_validate_config_file(file_path, popup=False)
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Editor Error",
+                f"Could not open editor:\n{str(e)}"
+            )
+
+    def open_file_location(self, file_path):
+        """Open the folder containing the file"""
+        try:
+            folder_path = os.path.dirname(file_path)
+            if os.path.exists(folder_path):
+                if os.name == 'nt':  # Windows
+                    os.startfile(folder_path)
+                elif os.name == 'posix':  # macOS and Linux
+                    if sys.platform == 'darwin':  # macOS
+                        subprocess.run(['open', folder_path])
+                    else:  # Linux
+                        subprocess.run(['xdg-open', folder_path])
+                else:
+                    QMessageBox.information(
+                        self,
+                        "Folder Location",
+                        f"File location:\n{folder_path}"
+                    )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Folder Not Found",
+                    f"The folder does not exist:\n{folder_path}"
+                )
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Error Opening Folder",
+                f"Could not open folder:\n{str(e)}"
             )
 
     def apply_config_data_to_ui(self, data):
@@ -1942,6 +2006,9 @@ class SerialTerminal(QMainWindow):
                 self.command_group_buttons.append(button)
         
         elif new_count < current_count:
+            if self.current_command_group > new_count:
+                self.load_mapped_command_list(new_count)
+            
             # Remove buttons
             for i in range(current_count - 1, new_count - 1, -1):
                 button = self.command_group_buttons.pop()
