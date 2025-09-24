@@ -8,8 +8,8 @@ import subprocess
 from PySide6.QtWidgets import (
     QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog
 )
-from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication
-from PySide6.QtCore import Signal, Qt, QEvent, QTimer
+from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator
+from PySide6.QtCore import Signal, Qt, QEvent, QTimer, QRegularExpression
 import utils
 from terminal_widget import TerminalWidget
 from yaml_editor import YamlEditorDialog
@@ -93,6 +93,11 @@ class SerialTerminal(QMainWindow):
         self.load_predefined_cmd_mappings()
         self.font_size = self.load_font_settings().get("size", 14)
         self.font_family = self.load_font_settings().get("family", "Monaco")
+        
+        # For HEX mode
+        self.hex_modes = [False] * LINEEDIT_MAX_NUMBER 
+        self.long_press_timers = []
+        self.original_texts = [""] * LINEEDIT_MAX_NUMBER
         self.auto_scroll_enabled = True
         self.comport_settings = []
         self.recent_ports = self.load_recent_ports()
@@ -254,13 +259,41 @@ class SerialTerminal(QMainWindow):
             row_layout = QHBoxLayout()
             checkbox = QCheckBox()
             lineedit = QLineEdit()
-            send_btn = QPushButton("Send")
-            send_btn.setToolTip(f"Send command to serial port")
+            send_btn = QPushButton("ASCII")
+            send_btn.setToolTip(f"Send command to serial port (Hold 3s to toggle HEX/ASCII)")
+            
+            # Timer for long press detection
+            long_press_timer = QTimer()
+            long_press_timer.setSingleShot(True)
+            long_press_timer.timeout.connect(lambda idx=i: self.toggle_hex_ascii_mode(idx))
+            self.long_press_timers.append(long_press_timer)
+            
             def make_send_handler(index):
                 return lambda: self.send_lineedit_command(index)
-            send_btn.clicked.connect(make_send_handler(i))
+            
+            def make_press_handler(index, timer):
+                return lambda: timer.start(1000)  # 2sec press timer
+            
+            def make_release_handler(index, timer):
+                def handler():
+                    if timer.isActive():
+                        timer.stop()
+                        self.send_lineedit_command(index)
+                return handler
+            
+            send_btn.pressed.connect(make_press_handler(i, long_press_timer))
+            send_btn.released.connect(make_release_handler(i, long_press_timer))
+            
+            def make_combined_text_handler(index):
+                def handler(text):
+                    self.handle_hex_input(index, text)
+                    # Only save when not in HEX mode
+                    if not self.hex_modes[index]:
+                        self.save_checkbox_lineedit()
+                return handler
+            
             checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
-            lineedit.textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit())
+            lineedit.textChanged.connect(make_combined_text_handler(i))
             row_layout.addWidget(checkbox)
             row_layout.addWidget(lineedit)
             row_layout.addWidget(send_btn)
@@ -349,6 +382,35 @@ class SerialTerminal(QMainWindow):
     def eventFilter(self, obj, event):
         key = None
         text = ""
+        
+
+        if isinstance(obj, QLineEdit) and event.type() == QEvent.KeyPress:
+            lineedit_index = -1
+            for i, lineedit in enumerate(self.lineedits):
+                if obj is lineedit:
+                    lineedit_index = i
+                    break
+            
+            if lineedit_index >= 0 and self.hex_modes[lineedit_index]:
+                key = event.key()
+                text = event.text()
+                modifiers = event.modifiers()
+                
+                if modifiers & (Qt.ControlModifier | Qt.MetaModifier):
+                    return False
+                
+                allowed_keys = [
+                    Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Left, Qt.Key_Right,
+                    Qt.Key_Home, Qt.Key_End, Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter,
+                    Qt.Key_Escape, Qt.Key_Space
+                ]
+                
+                if key in allowed_keys:
+                    return False
+                elif text and len(text) == 1 and text.upper() in '0123456789ABCDEF ':
+                    return False
+                else:
+                    return True
         
         # Detecting a scroll event
         if event.type() == QEvent.Type.Wheel and obj is self.terminal_widget:
@@ -1255,8 +1317,21 @@ class SerialTerminal(QMainWindow):
             self.sendline_btns[i].setVisible(False)
             self.lineedits[i].setText("")
             self.checkboxes[i].setChecked(False)
+            
+            self.hex_modes[i] = False
+            self.sendline_btns[i].setText("ASCII")
+            self.lineedits[i].setPlaceholderText("")
+            self.lineedits[i].setValidator(None)
+            
+            def make_combined_handler_for_update(index):
+                def handler(text):
+                    self.handle_hex_input(index, text)
+                    if not self.hex_modes[index]:
+                        self.save_checkbox_lineedit()
+                return handler
+                
             self.checkboxes[i].stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
-            self.lineedits[i].textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit())
+            self.lineedits[i].textChanged.connect(make_combined_handler_for_update(i))
 
         for item in commands_for_page:
 
@@ -1279,8 +1354,16 @@ class SerialTerminal(QMainWindow):
             
             self.checkboxes[ui_index].setVisible(not disabled)
             self.sendline_btns[ui_index].setVisible(not disabled)
-            self.checkboxes[ui_index].stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
-            self.lineedits[ui_index].textChanged.connect(lambda text, idx=i: self.save_checkbox_lineedit())
+            
+            def make_item_combined_handler(index):
+                def handler(text):
+                    self.handle_hex_input(index, text)
+                    if not self.hex_modes[index]:
+                        self.save_checkbox_lineedit()
+                return handler
+                
+            self.checkboxes[ui_index].stateChanged.connect(lambda state, idx=ui_index: self.save_checkbox_lineedit())
+            self.lineedits[ui_index].textChanged.connect(make_item_combined_handler(ui_index))
 
             if disabled:
                 self.lineedits[ui_index].setAlignment(Qt.AlignCenter)
@@ -1452,24 +1535,179 @@ class SerialTerminal(QMainWindow):
         self.left_panel_visible = not self.left_panel_visible
         self.terminal_widget.update_scrollbar()
 
+    def handle_hex_input(self, index, text):
+        if not self.hex_modes[index]:
+            return
+
+        # Avoid signal blocking to prevent infinite loops
+        if self.lineedits[index].signalsBlocked():
+            return
+
+        # Memory cursor position
+        cursor_pos = self.lineedits[index].cursorPosition()
+
+        # Process user input, considering spaces entered directly
+        # First, consolidate consecutive spaces
+        cleaned_text = ' '.join(text.split())
+
+        # Extract only HEX characters (allow 0-9, A-F, convert to uppercase)
+        hex_only = ''
+        for char in cleaned_text:
+            if char.upper() in '0123456789ABCDEF':
+                hex_only += char.upper()
+
+        # Format as XX XX XX...
+        formatted_text = ''
+        for i in range(0, len(hex_only), 2):
+            if i > 0:
+                formatted_text += ' '
+            if i + 1 < len(hex_only):
+                formatted_text += hex_only[i:i+2]
+            else:
+                formatted_text += hex_only[i]
+        
+        if formatted_text != text:
+            self.lineedits[index].blockSignals(True)
+            self.lineedits[index].setText(formatted_text)
+            
+            hex_char_count = min(cursor_pos, len(hex_only))
+            if hex_char_count == 0:
+                new_cursor_pos = 0
+            else:
+                pairs = hex_char_count // 2
+                remainder = hex_char_count % 2
+                new_cursor_pos = pairs * 3 + remainder 
+                if pairs > 0 and remainder == 0 and hex_char_count < len(hex_only):
+                    new_cursor_pos -= 1
+            
+            new_cursor_pos = min(new_cursor_pos, len(formatted_text))
+            self.lineedits[index].setCursorPosition(new_cursor_pos)
+            
+            self.lineedits[index].blockSignals(False)
+
+    def toggle_hex_ascii_mode(self, index):
+        """Toggle HEX/ASCII mode"""
+        current_text = self.lineedits[index].text()
+        
+        if not self.hex_modes[index]: 
+            yaml_text = self.get_original_text_from_yaml(index)
+            hex_text = self.ascii_to_hex(yaml_text)
+            
+            self.lineedits[index].blockSignals(True)
+            self.lineedits[index].setText(hex_text)
+            self.lineedits[index].blockSignals(False)
+            
+            self.sendline_btns[index].setText("HEX")
+            self.hex_modes[index] = True
+            
+            self.lineedits[index].setPlaceholderText("XX XX XX ... (HEX values only)")
+            
+            hex_regex = QRegularExpression(r"^[0-9A-Fa-f\s]*$")
+            hex_validator = QRegularExpressionValidator(hex_regex)
+            self.lineedits[index].setValidator(hex_validator)
+            
+        else:
+            original_ascii_text = self.get_original_text_from_yaml(index)
+
+            self.lineedits[index].blockSignals(True)
+            self.lineedits[index].setText(original_ascii_text)
+            self.lineedits[index].blockSignals(False)
+            
+            self.sendline_btns[index].setText("ASCII")
+            self.hex_modes[index] = False
+            
+            self.sendline_btns[index].setStyleSheet("")
+            self.lineedits[index].setStyleSheet("")
+            self.lineedits[index].setPlaceholderText("")
+            self.lineedits[index].setValidator(None)
+
+    def get_original_text_from_yaml(self, index):
+        """Getting the original text from YAML for the specified index."""
+        try:
+            original_index = self.current_page * LINEEDIT_MAX_NUMBER + index
+            
+            for item in self.full_command_list:
+                if item['index'] == original_index:
+                    return item['title']['text']
+            
+            return self.lineedits[index].text()
+        except Exception as e:
+            return self.lineedits[index].text()
+
+    def ascii_to_hex(self, text):
+        """Change the text to HEX format"""
+        if not text:
+            return ""
+        try:
+            hex_values = []
+            for char in text:
+                hex_val = format(ord(char), '02X')
+                hex_values.append(hex_val)
+            return ' '.join(hex_values)
+        except:
+            return text
+
+    def hex_to_ascii(self, hex_text):
+        """Change the HEX to ASCII text"""
+        if not hex_text:
+            return ""
+        try:
+            hex_values = hex_text.replace(' ', '')
+            if len(hex_values) % 2 != 0:
+                return hex_text 
+            
+            ascii_chars = []
+            for i in range(0, len(hex_values), 2):
+                hex_byte = hex_values[i:i+2]
+                try:
+                    ascii_chars.append(chr(int(hex_byte, 16)))
+                except ValueError:
+                    return hex_text
+            
+            return ''.join(ascii_chars)
+        except:
+            return hex_text 
+
+    def hex_text_to_bytes(self, hex_text):
+        """Change the HEX format text to a byte array."""
+        if not hex_text:
+            return b""
+        try:
+            hex_clean = hex_text.replace(' ', '').replace('\t', '').replace('\n', '')
+            if len(hex_clean) % 2 != 0:
+                hex_clean = '0' + hex_clean
+            
+            byte_array = bytearray()
+            for i in range(0, len(hex_clean), 2):
+                hex_byte = hex_clean[i:i+2]
+                byte_array.append(int(hex_byte, 16))
+            
+            return bytes(byte_array)
+        except ValueError as e:
+            return hex_text.encode('utf-8', errors='replace')
+
     def send_lineedit_command(self, index):
         command = self.lineedits[index].text()
         
         if command and self.serial and self.serial.is_open:
             try:
-                # Add command to history using utils
-                self.command_history = utils.add_to_history(
-                    self.command_history, 
-                    command,
-                    utils.get_history_settings().get("max_count", 50)
-                )
+                if self.hex_modes[index]:
+                    command_bytes = self.hex_text_to_bytes(command)
+                    display_command = f"HEX: {command}"
+                else:
+                    self.command_history = utils.add_to_history(
+                        self.command_history, 
+                        command,
+                        utils.get_history_settings().get("max_count", 50)
+                    )
+                    # Send command with carriage return and line feed
+                    command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
+                    display_command = f"{command}"
                 
-                # Send command with carriage return and line feed
-                command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
                 bytes_written = self.serial.write(command_bytes)
                 
                 # Display sent command in terminal for verification
-                self.serial_data_signal.emit(f"{command}\r\n")
+                self.serial_data_signal.emit(f"{display_command}\r\n")
                 
             except Exception as e:
                 # Handle encoding or serial errors
@@ -1483,6 +1721,14 @@ class SerialTerminal(QMainWindow):
         # Update the in-memory list first
         for i in range(LINEEDIT_MAX_NUMBER):
             if not self.lineedits[i].isVisible():
+                continue
+            
+            if self.hex_modes[i]:
+                original_index = self.current_page * LINEEDIT_MAX_NUMBER + i
+                for item in self.full_command_list:
+                    if item['index'] == original_index:
+                        item['checked'] = self.checkboxes[i].isChecked()
+                        break
                 continue
 
             original_index = self.current_page * LINEEDIT_MAX_NUMBER + i
