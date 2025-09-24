@@ -1052,7 +1052,7 @@ class SerialTerminal(QMainWindow):
                         text-decoration: underline;
                     }
                     QPushButton:hover {
-                        background-color: #f0f8ff;
+                        background-color: #BBBBBB;
                     }
                 """)
             else:
