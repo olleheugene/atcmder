@@ -352,6 +352,10 @@ class SerialTerminal(QMainWindow):
         self.left_panel_visible = True
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
+        # Load settings first
+        self.settings = self.load_settings()
+        self.apply_initial_settings()
+        
         # Set default YAML file as current
         self.current_cmdlist_file = utils.PREDEFINED_COMMAND_LIST1
         self.load_checkbox_lineedit(self.current_cmdlist_file)
@@ -376,10 +380,6 @@ class SerialTerminal(QMainWindow):
         self.find_dialog.prev_btn.clicked.connect(self.terminal_widget.prev_match)
         self.find_dialog.close_btn.clicked.connect(self.close_find_dialog)
 
-        # Load settings first
-        self.settings = self.load_settings()
-        self.apply_initial_settings()
-        
         # Initialize command group button styles
         self.update_command_group_button_styles()
 
@@ -1195,6 +1195,11 @@ class SerialTerminal(QMainWindow):
                 self.handle_yaml_file_error(file_path, f"Invalid File Structure: {message}")
                 return
 
+            # Add default hexmode attribute if missing
+            for item in data:
+                if 'hexmode' not in item:
+                    item['hexmode'] = False
+
             # Truncate if more than LINEEDIT_MAX_NUMBER
             if len(data) > LINEEDIT_MAX_NUMBER:
                 data = data[:LINEEDIT_MAX_NUMBER]
@@ -1382,6 +1387,10 @@ class SerialTerminal(QMainWindow):
                 
             self.checkboxes[ui_index].stateChanged.connect(lambda state, idx=ui_index: self.save_checkbox_lineedit())
             self.lineedits[ui_index].textChanged.connect(make_item_combined_handler(ui_index))
+
+            hexmode_enabled = item.get("hexmode", False)
+            if hexmode_enabled and (self.settings.get("keep_hex_mode", False) == True):
+                self.toggle_hex_ascii_mode(ui_index)
 
             if disabled:
                 self.lineedits[ui_index].setAlignment(Qt.AlignCenter)
@@ -1607,7 +1616,7 @@ class SerialTerminal(QMainWindow):
         """Toggle HEX/ASCII mode"""
         current_text = self.lineedits[index].text()
         
-        if not self.hex_modes[index]: 
+        if not self.hex_modes[index]:
             yaml_text = self.get_original_text_from_yaml(index)
             hex_text = self.ascii_to_hex(yaml_text)
             
@@ -1638,6 +1647,21 @@ class SerialTerminal(QMainWindow):
             self.lineedits[index].setStyleSheet("")
             self.lineedits[index].setPlaceholderText("")
             self.lineedits[index].setValidator(None)
+
+        self.update_hexmode_in_yaml(index, self.hex_modes[index])
+
+    def update_hexmode_in_yaml(self, index, hexmode_value):
+        """Update hexmode value in YAML for the specified index"""
+        try:
+            original_index = self.current_page * LINEEDIT_MAX_NUMBER + index
+            for item in self.full_command_list:
+                if item['index'] == original_index:
+                    item['hexmode'] = hexmode_value
+                    break
+            self.save_checkbox_lineedit()
+            
+        except Exception as e:
+            print(f"hexmode update failed: {e}")
 
     def get_original_text_from_yaml(self, index):
         """Getting the original text from YAML for the specified index."""
@@ -1741,20 +1765,16 @@ class SerialTerminal(QMainWindow):
             if not self.lineedits[i].isVisible():
                 continue
             
-            if self.hex_modes[i]:
-                original_index = self.current_page * LINEEDIT_MAX_NUMBER + i
-                for item in self.full_command_list:
-                    if item['index'] == original_index:
-                        item['checked'] = self.checkboxes[i].isChecked()
-                        break
-                continue
-
             original_index = self.current_page * LINEEDIT_MAX_NUMBER + i
             
             for item in self.full_command_list:
                 if item['index'] == original_index:
                     item['checked'] = self.checkboxes[i].isChecked()
-                    item['title']['text'] = self.lineedits[i].text()
+                    item['hexmode'] = self.hex_modes[i]
+                    
+                    if not self.hex_modes[i]:
+                        item['title']['text'] = self.lineedits[i].text()
+
                     break
         
         if filename is None:
@@ -2299,7 +2319,8 @@ class SerialTerminal(QMainWindow):
                     "text": f"Command {i+1}",
                     "disabled": False
                 },
-                "time": 0.5
+                "time": 0.5,
+                "hexmode": False
             }
             empty_commands.append(command_item)
 

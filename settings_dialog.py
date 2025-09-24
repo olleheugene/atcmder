@@ -195,12 +195,31 @@ class WindowsTab(QWidget):
         command_group.setLayout(command_layout)
         layout.addWidget(command_group)
         
+        # HEX Mode settings
+        hex_mode_group = QGroupBox("HEX Mode Settings")
+        hex_mode_layout = QVBoxLayout()
+        
+        self.keep_hex_mode_check = QCheckBox("Keeping HEX mode")
+        self.keep_hex_mode_check.setToolTip("When enabled, commands with hexmode=true in YAML will be displayed in HEX mode on startup")
+        hex_mode_layout.addWidget(self.keep_hex_mode_check)
+        
+        # Description label
+        hex_info_label = QLabel("If checked, commands marked with 'hexmode: true' in YAML files\nwill automatically switch to HEX mode when the application starts.")
+        hex_info_label.setStyleSheet("color: #666; font-size: 11px;")
+        hex_mode_layout.addWidget(hex_info_label)
+        
+        hex_mode_group.setLayout(hex_mode_layout)
+        layout.addWidget(hex_mode_group)
+        
         layout.addStretch()
         self.setLayout(layout)
     
     def load_settings(self, settings):
         # Load Theme setting
         self.theme_combo.setCurrentText(settings.get('theme', 'default'))
+        
+        # Load Keep HEX mode setting
+        self.keep_hex_mode_check.setChecked(settings.get('keep_hex_mode', False))
         
         # Load Command Group count
         try:
@@ -221,6 +240,9 @@ class WindowsTab(QWidget):
     def save_settings(self, settings):
         # Save Theme setting
         settings['theme'] = self.theme_combo.currentText()
+        
+        # Save Keep HEX mode setting
+        settings['keep_hex_mode'] = self.keep_hex_mode_check.isChecked()
         
         # Save Command Group count and update UI
         new_count = self.command_group_spin.value()
@@ -378,6 +400,9 @@ class SettingsDialog(QDialog):
             if 'command_group_count' in self.settings:
                 data['command_group_count'] = self.settings['command_group_count']
             
+            if 'keep_hex_mode' in self.settings:
+                data['keep_hex_mode'] = self.settings['keep_hex_mode']      
+
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
             
