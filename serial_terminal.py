@@ -88,7 +88,7 @@ class SerialTerminal(QMainWindow):
         self.current_cmdlist_file = None
         self.full_command_list = []
         self.current_page = 0
-        self.current_command_group = 1
+        self.current_command_group = self.load_current_command_group()
         self.predefined_cmd_mappings = {}
         self.load_predefined_cmd_mappings()
         self.font_size = self.load_font_settings().get("size", 14)
@@ -361,6 +361,10 @@ class SerialTerminal(QMainWindow):
         self.refresh_serial_ports(auto_connect=True)
         self.terminal_widget.setFocus()
         self.auto_load_selected_commandlist_file()
+        
+        # Load the command list for the current selected group
+        self.load_current_group_command_list()
+        
         self.update_config_file_status()
         self.last_ports = set(list_serial_ports())
         self._display_buffer = ""
@@ -911,62 +915,15 @@ class SerialTerminal(QMainWindow):
             self.update_status_bar("No command list loaded")
             self.setWindowTitle("AT Commander v" + utils.APP_VERSION)
 
-    def save_selected_config_filepath(self, file_path):
-        """Save the last loaded YAML file path to settings"""
-        try:
-            # Load existing settings first
-            settings = {}
-            if os.path.exists(utils.USER_SETTINGS):
-                try:
-                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                        data = yaml.safe_load(f) or {}
 
-                    if isinstance(data, dict):
-                        settings = data.copy()
-                    elif isinstance(data, list):
-                        for item in data:
-                            if isinstance(item, dict):
-                                settings.update(item)
-                except Exception:
-                    settings = {}
-            
-            settings["last_cmdlist_file"] = file_path
-            
-            # Save back to file
-            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
-                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
-        except Exception as e:
-            print(f"Warning: Could not save last YAML file setting: {e}")
 
-    def load_selected_commandlist_file(self):
-        """Load the last used YAML file path from settings"""
-        try:
-            with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-                
-            if isinstance(data, dict):
-                return data.get("last_cmdlist_file")
-            elif isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict) and "last_cmdlist_file" in item:
-                        return item["last_cmdlist_file"]
-                
-            return None
-        except Exception:
-            return None
+
 
     def auto_load_selected_commandlist_file(self):
-        """Automatically load the last used YAML file on startup"""
-        last_file = self.load_selected_commandlist_file()
-        if last_file and os.path.exists(last_file) and last_file != utils.PREDEFINED_COMMAND_LIST1:
-            try:
-                self.load_and_validate_config_file(last_file, popup=True)
-                # print(f"Auto-loaded last YAML file: {os.path.basename(last_file)}")
-            except Exception as e:
-                print(f"Could not auto-load last YAML file: {e}")
-                # Fall back to default
-                self.current_cmdlist_file = utils.PREDEFINED_COMMAND_LIST1
-                self.update_config_file_status()
+        """Automatically load the command list for the current selected group on startup"""
+        # The current_command_group is already loaded, just load its command list
+        # This is now handled by load_current_group_command_list()
+        pass
 
     def load_command_list_from_file(self):
         """Open file dialog to load command list from YAML file"""
@@ -1017,12 +974,14 @@ class SerialTerminal(QMainWindow):
         if file_path and os.path.exists(file_path):
             self.load_and_validate_config_file(file_path, popup=False)
             self.current_command_group = button_number
+            self.save_current_command_group()
             self.update_command_group_button_styles()
         elif file_path and button_number >= 4:
             try:
                 self.create_empty_command_file(file_path, button_number)
                 self.load_and_validate_config_file(file_path, popup=False)
                 self.current_command_group = button_number
+                self.save_current_command_group()
                 self.update_command_group_button_styles()
                 self.update_status_bar(f"Created new command list file for button {button_number}")
             except Exception as e:
@@ -1116,6 +1075,68 @@ class SerialTerminal(QMainWindow):
                 self.predefined_cmd_mappings[i] = utils.get_user_config_path(f"atcmder_predefined_cmd_{i}.yaml")
             self.save_predefined_cmd_mappings()
 
+    def load_current_command_group(self):
+        """Load the last selected command group from settings"""
+        try:
+            if os.path.exists(utils.USER_SETTINGS):
+                with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                
+                if isinstance(data, dict) and "current_command_group" in data:
+                    return max(1, min(data["current_command_group"], 10))  # Ensure it's between 1 and 10
+                    
+        except Exception as e:
+            print(f"Error loading current command group: {e}")
+        
+        return 1  # Default to group 1
+
+    def save_current_command_group(self):
+        """Save the current selected command group to settings"""
+        try:
+            settings = {}
+            
+            if os.path.exists(utils.USER_SETTINGS):
+                try:
+                    with open(utils.USER_SETTINGS, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f) or {}
+
+                    if isinstance(data, dict):
+                        settings = data.copy()
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict):
+                                settings.update(item)
+                except Exception:
+                    settings = {}
+
+            settings["current_command_group"] = self.current_command_group
+
+            with open(utils.USER_SETTINGS, "w", encoding="utf-8") as f:
+                yaml.safe_dump(settings, f, allow_unicode=True, sort_keys=False)
+                
+        except Exception as e:
+            print(f"Warning: Could not save current command group: {e}")
+
+    def load_current_group_command_list(self):
+        """Load the command list for the currently selected group"""
+        try:
+            # Only load if we're not on group 1 (which is already loaded as default)
+            if self.current_command_group != 1:
+                file_path = self.predefined_cmd_mappings.get(self.current_command_group)
+                
+                if file_path and os.path.exists(file_path):
+                    self.load_and_validate_config_file(file_path, popup=False)
+                    print(f"Loaded command list for group {self.current_command_group}")
+                elif self.current_command_group >= 4:
+                    # Create empty file for groups 4-10 if not exists
+                    file_path = utils.get_user_config_path(f"atcmder_predefined_cmd_{self.current_command_group}.yaml")
+                    self.predefined_cmd_mappings[self.current_command_group] = file_path
+                    self.create_empty_command_file(file_path, self.current_command_group)
+                    self.load_and_validate_config_file(file_path, popup=False)
+                    print(f"Created and loaded empty command list for group {self.current_command_group}")
+        except Exception as e:
+            print(f"Error loading current group command list: {e}")
+
     def validate_config_structure(self, data):
         """Validate YAML file structure for command list"""
         if not isinstance(data, list):
@@ -1198,9 +1219,6 @@ class SerialTerminal(QMainWindow):
                     )
             else:
                 self.first_load = False
-            
-            # Save as last loaded YAML file for next startup
-            self.save_selected_config_filepath(file_path)
         
         except yaml.YAMLError as e:
             self.handle_yaml_file_error(file_path, f"YAML Parse Error: {str(e)}")
