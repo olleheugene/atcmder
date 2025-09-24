@@ -4,57 +4,67 @@
     text: ""
     disabled: false
   time: 5.0
+  hexmode: true
 - index: 1
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 2
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 3
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 4
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 5
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 6
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 7
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 8
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
 - index: 9
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
+  hexmode: true
