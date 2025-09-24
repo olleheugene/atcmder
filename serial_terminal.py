@@ -284,16 +284,16 @@ class SerialTerminal(QMainWindow):
             send_btn.pressed.connect(make_press_handler(i, long_press_timer))
             send_btn.released.connect(make_release_handler(i, long_press_timer))
             
-            def make_combined_text_handler(index):
+            def make_text_change_handler(index):
                 def handler(text):
                     self.handle_hex_input(index, text)
-                    # Only save when not in HEX mode
+                    # Always save regardless of mode (handle_hex_input will save if needed for HEX)
                     if not self.hex_modes[index]:
                         self.save_checkbox_lineedit()
                 return handler
             
             checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
-            lineedit.textChanged.connect(make_combined_text_handler(i))
+            lineedit.textChanged.connect(make_text_change_handler(i))
             row_layout.addWidget(checkbox)
             row_layout.addWidget(lineedit)
             row_layout.addWidget(send_btn)
@@ -1346,7 +1346,7 @@ class SerialTerminal(QMainWindow):
             self.lineedits[i].setPlaceholderText("")
             self.lineedits[i].setValidator(None)
             
-            def make_combined_handler_for_update(index):
+            def make_text_change_handler(index):
                 def handler(text):
                     self.handle_hex_input(index, text)
                     if not self.hex_modes[index]:
@@ -1354,7 +1354,7 @@ class SerialTerminal(QMainWindow):
                 return handler
                 
             self.checkboxes[i].stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
-            self.lineedits[i].textChanged.connect(make_combined_handler_for_update(i))
+            self.lineedits[i].textChanged.connect(make_text_change_handler(i))
 
         for item in commands_for_page:
 
@@ -1368,7 +1368,18 @@ class SerialTerminal(QMainWindow):
             self.sendline_btns[ui_index].setVisible(True)
 
             self.checkboxes[ui_index].setChecked(item["checked"])
-            self.lineedits[ui_index].setText(item["title"]["text"])
+            
+            # Format text based on hexmode
+            raw_text = item["title"]["text"]
+            hexmode_enabled = item.get("hexmode", False)
+            keep_hex_mode = self.settings.get("keep_hex_mode", False) if hasattr(self, 'settings') else False
+            
+            if hexmode_enabled:
+                # Always display as HEX if hexmode is true in YAML, regardless of keep_hex_mode setting
+                formatted_text = raw_text  # Use raw text as-is (should already be in HEX format)
+                self.lineedits[ui_index].setText(formatted_text)
+            else:
+                self.lineedits[ui_index].setText(raw_text)
             
             disabled = item.get("title", {}).get("disabled", False)
             self.checkboxes[ui_index].setDisabled(disabled)
@@ -1378,7 +1389,7 @@ class SerialTerminal(QMainWindow):
             self.checkboxes[ui_index].setVisible(not disabled)
             self.sendline_btns[ui_index].setVisible(not disabled)
             
-            def make_item_combined_handler(index):
+            def make_text_change_handler(index):
                 def handler(text):
                     self.handle_hex_input(index, text)
                     if not self.hex_modes[index]:
@@ -1386,10 +1397,10 @@ class SerialTerminal(QMainWindow):
                 return handler
                 
             self.checkboxes[ui_index].stateChanged.connect(lambda state, idx=ui_index: self.save_checkbox_lineedit())
-            self.lineedits[ui_index].textChanged.connect(make_item_combined_handler(ui_index))
+            self.lineedits[ui_index].textChanged.connect(make_text_change_handler(ui_index))
 
-            hexmode_enabled = item.get("hexmode", False)
-            if hexmode_enabled and (self.settings.get("keep_hex_mode", False) == True):
+            if hexmode_enabled and keep_hex_mode:
+                # Switch to HEX mode only if hexmode is true in YAML AND keep_hex_mode setting is enabled
                 self.toggle_hex_ascii_mode(ui_index)
 
             if disabled:
@@ -1573,15 +1584,26 @@ class SerialTerminal(QMainWindow):
         # Memory cursor position
         cursor_pos = self.lineedits[index].cursorPosition()
 
-        # Process user input, considering spaces entered directly
-        # First, consolidate consecutive spaces
-        cleaned_text = ' '.join(text.split())
-
-        # Extract only HEX characters (allow 0-9, A-F, convert to uppercase)
-        hex_only = ''
-        for char in cleaned_text:
-            if char.upper() in '0123456789ABCDEF':
-                hex_only += char.upper()
+        # Process user input, supporting various HEX formats
+        # Support formats: 0x12 0x23, 0X12 0X23, 12 23, 1223, etc.
+        
+        # First, use regex to extract hex values from 0x prefixed format
+        hex_pattern = r'(?:0[xX])?([0-9A-Fa-f]+)'
+        hex_matches = re.findall(hex_pattern, text)
+        
+        if hex_matches:
+            # Join all hex values and remove any remaining non-hex characters
+            combined_hex = ''.join(hex_matches)
+        else:
+            # Fallback: remove 0x prefixes and extract hex characters
+            text_without_0x = text.replace('0x', '').replace('0X', '')
+            combined_hex = ''
+            for char in text_without_0x:
+                if char.upper() in '0123456789ABCDEF':
+                    combined_hex += char.upper()
+        
+        # Convert to uppercase
+        hex_only = combined_hex.upper()
 
         # Format as XX XX XX...
         formatted_text = ''
@@ -1597,13 +1619,15 @@ class SerialTerminal(QMainWindow):
             self.lineedits[index].blockSignals(True)
             self.lineedits[index].setText(formatted_text)
             
+            # Calculate cursor position for XX XX format
             hex_char_count = min(cursor_pos, len(hex_only))
             if hex_char_count == 0:
                 new_cursor_pos = 0
             else:
                 pairs = hex_char_count // 2
                 remainder = hex_char_count % 2
-                new_cursor_pos = pairs * 3 + remainder 
+                # Each pair is "XX " (3 characters), last pair is "XX" (2 characters without space)
+                new_cursor_pos = pairs * 3 + remainder
                 if pairs > 0 and remainder == 0 and hex_char_count < len(hex_only):
                     new_cursor_pos -= 1
             
@@ -1611,14 +1635,30 @@ class SerialTerminal(QMainWindow):
             self.lineedits[index].setCursorPosition(new_cursor_pos)
             
             self.lineedits[index].blockSignals(False)
+            
+            # Save the formatted text to YAML
+            self.save_checkbox_lineedit()
 
     def toggle_hex_ascii_mode(self, index):
         """Toggle HEX/ASCII mode"""
-        current_text = self.lineedits[index].text()
-        
         if not self.hex_modes[index]:
+            # ASCII -> HEX
             yaml_text = self.get_original_text_from_yaml(index)
-            hex_text = self.ascii_to_hex(yaml_text)
+            
+            # Check if this item already has hexmode=true in YAML
+            original_index = self.current_page * LINEEDIT_MAX_NUMBER + index
+            is_yaml_hexmode = False
+            for item in self.full_command_list:
+                if item['index'] == original_index:
+                    is_yaml_hexmode = item.get('hexmode', False)
+                    break
+            
+            if is_yaml_hexmode:
+                # YAML text is already in HEX format, use it as-is
+                hex_text = yaml_text
+            else:
+                # YAML text is ASCII, convert to HEX
+                hex_text = self.ascii_to_hex(yaml_text)
             
             self.lineedits[index].blockSignals(True)
             self.lineedits[index].setText(hex_text)
@@ -1626,10 +1666,10 @@ class SerialTerminal(QMainWindow):
             
             self.sendline_btns[index].setText("HEX")
             self.hex_modes[index] = True
-            
             self.lineedits[index].setPlaceholderText("XX XX XX ... (HEX values only)")
-            
-            hex_regex = QRegularExpression(r"^[0-9A-Fa-f\s]*$")
+
+            # Allow hex digits, spaces, and 0x/0X prefixes for flexible input
+            hex_regex = QRegularExpression(r"^[0-9A-Fa-fxX\s]*$")
             hex_validator = QRegularExpressionValidator(hex_regex)
             self.lineedits[index].setValidator(hex_validator)
             
@@ -1688,6 +1728,36 @@ class SerialTerminal(QMainWindow):
             return ' '.join(hex_values)
         except:
             return text
+
+    def format_as_hex_display(self, text):
+        """Format text as HEX display with 0x prefix"""
+        if not text:
+            return ""
+        
+        # Remove all spaces and non-hex characters first
+        clean_text = ''.join(c for c in text.upper() if c in '0123456789ABCDEF ')
+        
+        # Split by spaces to get individual hex values
+        hex_values = clean_text.split()
+        
+        # Add 0x prefix to each hex value
+        formatted_values = []
+        for hex_val in hex_values:
+            if hex_val:  # Skip empty strings
+                # Ensure it's exactly 2 characters (pad with 0 if needed)
+                if len(hex_val) == 1:
+                    hex_val = '0' + hex_val
+                elif len(hex_val) > 2:
+                    # If longer than 2, split into 2-character chunks
+                    for i in range(0, len(hex_val), 2):
+                        chunk = hex_val[i:i+2]
+                        if len(chunk) == 1:
+                            chunk = '0' + chunk
+                        formatted_values.append(chunk)
+                    continue
+                formatted_values.append(hex_val)
+        
+        return ' '.join(formatted_values)
 
     def hex_to_ascii(self, hex_text):
         """Change the HEX to ASCII text"""
@@ -1772,8 +1842,8 @@ class SerialTerminal(QMainWindow):
                     item['checked'] = self.checkboxes[i].isChecked()
                     item['hexmode'] = self.hex_modes[i]
                     
-                    if not self.hex_modes[i]:
-                        item['title']['text'] = self.lineedits[i].text()
+                    # Always save the current text as-is, regardless of mode or settings
+                    item['title']['text'] = self.lineedits[i].text()
 
                     break
         
@@ -2168,7 +2238,8 @@ class SerialTerminal(QMainWindow):
                 'font': {'name': 'Monaco', 'size': 14, 'bold': False},
                 'theme': 'default',  # Keep as string for consistency
                 'output_window': {'show_line_numbers': False, 'show_time': False},
-                'history': {'max_entries': 100}
+                'history': {'max_entries': 100},
+                'keep_hex_mode': False
             }
             
             # Merge with defaults
@@ -2189,7 +2260,8 @@ class SerialTerminal(QMainWindow):
                 'font': {'name': 'Monaco', 'size': 14, 'bold': False},
                 'theme': 'default',  # Keep as string
                 'output_window': {'show_line_numbers': False, 'show_time': False},
-                'history': {'max_entries': 100}
+                'history': {'max_entries': 100},
+                'keep_hex_mode': False
             }
 
     def apply_initial_settings(self):
