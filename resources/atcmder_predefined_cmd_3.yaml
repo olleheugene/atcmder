@@ -4,67 +4,67 @@
     text: ""
     disabled: false
   time: 5.0
-  hexmode: true
+  hexmode: false
 - index: 1
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 2
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 3
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 4
   checked: true
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 5
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 6
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 7
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 8
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
 - index: 9
   checked: false
   title:
     text: ""
     disabled: false
   time: 0.5
-  hexmode: true
+  hexmode: false
