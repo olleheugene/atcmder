@@ -369,7 +369,8 @@ class SettingsDialog(QDialog):
                     is_new_format = False
 
             # Save in new format (use top-level keys)
-            data = {}
+            data = existing_data.copy() if isinstance(existing_data, dict) else {}
+            
             data['font'] = self.settings['font']
             data['theme'] = self.settings['theme']
             data['output_window'] = self.settings['output_window']
