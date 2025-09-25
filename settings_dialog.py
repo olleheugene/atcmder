@@ -199,7 +199,7 @@ class WindowsTab(QWidget):
         hex_mode_group = QGroupBox("HEX Mode Settings")
         hex_mode_layout = QVBoxLayout()
         
-        self.keep_hex_mode_check = QCheckBox("Keeping HEX mode")
+        self.keep_hex_mode_check = QCheckBox("Keep HEX mode")
         self.keep_hex_mode_check.setToolTip("When enabled, commands with hexmode=true in YAML will be displayed in HEX mode on startup")
         hex_mode_layout.addWidget(self.keep_hex_mode_check)
         
