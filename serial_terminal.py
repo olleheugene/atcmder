@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog
 )
 from PySide6.QtGui import QIcon, QFont, QAction, QGuiApplication, QRegularExpressionValidator
-from PySide6.QtCore import Signal, Qt, QEvent, QTimer, QRegularExpression
+from PySide6.QtCore import Signal, Qt, QEvent, QTimer, QRegularExpression, QSize
 import utils
 from terminal_widget import TerminalWidget
 from yaml_editor import YamlEditorDialog
@@ -327,7 +327,8 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.installEventFilter(self)
         self.clear_btn = QPushButton()
         self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
-        self.clear_btn.setFixedSize(20, 20)
+        self.clear_btn.setFixedSize(28, 28)
+        self.clear_btn.setIconSize(QSize(20, 20))
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
         self.right_layout = QVBoxLayout()
