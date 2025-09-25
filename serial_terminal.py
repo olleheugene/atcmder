@@ -96,7 +96,6 @@ class SerialTerminal(QMainWindow):
         
         # For HEX mode
         self.hex_modes = [False] * LINEEDIT_MAX_NUMBER 
-        self.long_press_timers = []
         self.original_texts = [""] * LINEEDIT_MAX_NUMBER
         self.auto_scroll_enabled = True
         self.comport_settings = []
@@ -110,7 +109,7 @@ class SerialTerminal(QMainWindow):
         self.command_group_count = self.load_command_group_count()
         self.command_group_buttons = []
         
-        self.author_label = QLabel("By OllehEugene")
+        self.author_label = QLabel("ATCMDer v" + utils.APP_VERSION + " by OllehEugene")
         self.author_label.setStyleSheet("color: #888; margin-left: 12px;")
         self.status.addPermanentWidget(self.author_label)
 
@@ -254,55 +253,73 @@ class SerialTerminal(QMainWindow):
         self.checkboxes = []
         self.lineedits = []
         self.sendline_btns = []
+        self.mode_labels = []
+
         for i in range(LINEEDIT_MAX_NUMBER):
             row_widget = QWidget()
             row_layout = QHBoxLayout()
             checkbox = QCheckBox()
             lineedit = QLineEdit()
-            send_btn = QPushButton("ASCII")
-            send_btn.setToolTip(f"Send command to serial port (Hold 3s to toggle HEX/ASCII)")
             
-            # Timer for long press detection
-            long_press_timer = QTimer()
-            long_press_timer.setSingleShot(True)
-            long_press_timer.timeout.connect(lambda idx=i: self.toggle_hex_ascii_mode(idx))
-            self.long_press_timers.append(long_press_timer)
+            mode_label = QLabel()
+            mode_label.setFixedSize(20, 20)
+            mode_label.setScaledContents(True)
+            mode_label.setToolTip("ASCII mode - Click to toggle HEX/ASCII")
+            mode_label.setCursor(Qt.PointingHandCursor)
+            
+            ascii_icon_path = utils.get_resources("ascii_icon.png")
+            if os.path.exists(ascii_icon_path):
+                mode_label.setPixmap(QIcon(ascii_icon_path).pixmap(20, 20))
+            else:
+                mode_label.setText("ASC")
+                mode_label.setAlignment(Qt.AlignCenter)
+                mode_label.setStyleSheet("font-size: 10px; font-weight: bold; color: #555; border: 1px solid #ccc; border-radius: 3px;")
+    
+            send_btn = QPushButton("SEND")
+            send_btn.setToolTip("Send command to serial port")
             
             def make_send_handler(index):
                 return lambda: self.send_lineedit_command(index)
             
-            def make_press_handler(index, timer):
-                return lambda: timer.start(1000)  # 2sec press timer
+            send_btn.clicked.connect(make_send_handler(i))
             
-            def make_release_handler(index, timer):
-                def handler():
-                    if timer.isActive():
-                        timer.stop()
-                        self.send_lineedit_command(index)
+            def make_mode_toggle_handler(index):
+                def handler(event):
+                    self.toggle_hex_ascii_mode(index)
                 return handler
             
-            send_btn.pressed.connect(make_press_handler(i, long_press_timer))
-            send_btn.released.connect(make_release_handler(i, long_press_timer))
+            mode_label.mousePressEvent = make_mode_toggle_handler(i)
             
             def make_text_change_handler(index):
                 def handler(text):
-                    self.handle_hex_input(index, text)
-                    # Always save regardless of mode (handle_hex_input will save if needed for HEX)
-                    if not self.hex_modes[index]:
+                    if self.hex_modes[index]:
+                        self.handle_hex_input(index, text)
+                    else:
                         self.save_checkbox_lineedit()
                 return handler
-            
+    
             checkbox.stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
             lineedit.textChanged.connect(make_text_change_handler(i))
+    
             row_layout.addWidget(checkbox)
             row_layout.addWidget(lineedit)
-            row_layout.addWidget(send_btn)
+
+            label_btn_layout = QHBoxLayout()
+            label_btn_layout.setSpacing(2)
+            label_btn_layout.setContentsMargins(0, 0, 0, 0)
+            label_btn_layout.addWidget(mode_label)
+            label_btn_layout.addWidget(send_btn)
+
+            row_layout.addLayout(label_btn_layout)
+    
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_widget.setLayout(row_layout)
             self.left_widget_layout.addWidget(row_widget)
+    
             self.checkboxes.append(checkbox)
             self.lineedits.append(lineedit)
             self.sendline_btns.append(send_btn)
+            self.mode_labels.append(mode_label)
         self.left_widget_layout.addStretch()
         self.left_widget.setLayout(self.left_widget_layout)
         self.terminal_widget = TerminalWidget(font_family=self.font_family, font_size=self.font_size)
@@ -310,7 +327,7 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.installEventFilter(self)
         self.clear_btn = QPushButton()
         self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
-        self.clear_btn.setFixedSize(24, 24)
+        self.clear_btn.setFixedSize(20, 20)
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
         self.right_layout = QVBoxLayout()
@@ -1338,26 +1355,34 @@ class SerialTerminal(QMainWindow):
             self.checkboxes[i].setVisible(False)
             self.lineedits[i].setVisible(False)
             self.sendline_btns[i].setVisible(False)
+            self.mode_labels[i].setVisible(False)
             self.lineedits[i].setText("")
             self.checkboxes[i].setChecked(False)
             
             self.hex_modes[i] = False
-            self.sendline_btns[i].setText("ASCII")
+            
+            ascii_icon_path = utils.get_resources("ascii_icon.png")
+            if os.path.exists(ascii_icon_path):
+                self.mode_labels[i].setPixmap(QIcon(ascii_icon_path).pixmap(20, 20))
+                self.mode_labels[i].setText("")
+            else:
+                self.mode_labels[i].setText("ASC")
+                self.mode_labels[i].setStyleSheet("font-size: 10px; font-weight: bold; color: #555; border: 1px solid #ccc; border-radius: 3px;")
+            
+            self.mode_labels[i].setToolTip("ASCII mode - Click to toggle HEX/ASCII")
+            self.mode_labels[i].setCursor(Qt.PointingHandCursor)
+            
+            def make_mode_toggle_handler_for_update(index):
+                def handler(event):
+                    self.toggle_hex_ascii_mode(index)
+                return handler
+            
+            self.mode_labels[i].mousePressEvent = make_mode_toggle_handler_for_update(i)
+            
             self.lineedits[i].setPlaceholderText("")
             self.lineedits[i].setValidator(None)
-            
-            def make_text_change_handler(index):
-                def handler(text):
-                    self.handle_hex_input(index, text)
-                    if not self.hex_modes[index]:
-                        self.save_checkbox_lineedit()
-                return handler
-                
-            self.checkboxes[i].stateChanged.connect(lambda state, idx=i: self.save_checkbox_lineedit())
-            self.lineedits[i].textChanged.connect(make_text_change_handler(i))
 
         for item in commands_for_page:
-
             original_index = item["index"]
             ui_index = original_index % LINEEDIT_MAX_NUMBER
             self.checkboxes[ui_index].stateChanged.disconnect()
@@ -1366,7 +1391,8 @@ class SerialTerminal(QMainWindow):
             self.checkboxes[ui_index].setVisible(True)
             self.lineedits[ui_index].setVisible(True)
             self.sendline_btns[ui_index].setVisible(True)
-
+            self.mode_labels[ui_index].setVisible(True)
+            
             self.checkboxes[ui_index].setChecked(item["checked"])
             
             # Format text based on hexmode
@@ -1388,16 +1414,18 @@ class SerialTerminal(QMainWindow):
             
             self.checkboxes[ui_index].setVisible(not disabled)
             self.sendline_btns[ui_index].setVisible(not disabled)
+            self.mode_labels[ui_index].setVisible(not disabled)
             
-            def make_text_change_handler(index):
+            def make_text_change_handler_for_update(index):
                 def handler(text):
-                    self.handle_hex_input(index, text)
-                    if not self.hex_modes[index]:
+                    if self.hex_modes[index]:
+                        self.handle_hex_input(index, text)
+                    else:
                         self.save_checkbox_lineedit()
                 return handler
-                
+            
             self.checkboxes[ui_index].stateChanged.connect(lambda state, idx=ui_index: self.save_checkbox_lineedit())
-            self.lineedits[ui_index].textChanged.connect(make_text_change_handler(ui_index))
+            self.lineedits[ui_index].textChanged.connect(make_text_change_handler_for_update(ui_index))
 
             if hexmode_enabled and keep_hex_mode:
                 # Switch to HEX mode only if hexmode is true in YAML AND keep_hex_mode setting is enabled
@@ -1657,16 +1685,31 @@ class SerialTerminal(QMainWindow):
                 # YAML text is already in HEX format, use it as-is
                 hex_text = yaml_text
             else:
-                # YAML text is ASCII, convert to HEX
-                hex_text = self.ascii_to_hex(yaml_text)
+                # Check if text is already in HEX format (contains only hex digits and spaces)
+                import re
+                if re.match(r'^[0-9A-Fa-f\s]*$', yaml_text.strip()) and len(yaml_text.replace(' ', '')) % 2 == 0:
+                    # Text appears to be already in HEX format, use as-is
+                    hex_text = yaml_text
+                else:
+                    # YAML text is ASCII, convert to HEX
+                    hex_text = self.ascii_to_hex(yaml_text)
             
             self.lineedits[index].blockSignals(True)
             self.lineedits[index].setText(hex_text)
             self.lineedits[index].blockSignals(False)
             
-            self.sendline_btns[index].setText("HEX")
             self.hex_modes[index] = True
-            self.lineedits[index].setPlaceholderText("XX XX XX ... (HEX values only)")
+            self.lineedits[index].setPlaceholderText("XX XX XX ... (HEX values, 0x prefix supported)")
+
+            hex_icon_path = utils.get_resources("hex_icon.png")
+            if os.path.exists(hex_icon_path):
+                self.mode_labels[index].setPixmap(QIcon(hex_icon_path).pixmap(20, 20))
+                self.mode_labels[index].setText("")
+            else:
+                self.mode_labels[index].setText("HEX")
+                self.mode_labels[index].setStyleSheet("font-size: 10px; font-weight: bold; color: #e74c3c; border: 1px solid #e74c3c; border-radius: 3px;")
+
+            self.mode_labels[index].setToolTip("HEX mode - Click to toggle HEX/ASCII")
 
             # Allow hex digits, spaces, and 0x/0X prefixes for flexible input
             hex_regex = QRegularExpression(r"^[0-9A-Fa-fxX\s]*$")
@@ -1674,17 +1717,44 @@ class SerialTerminal(QMainWindow):
             self.lineedits[index].setValidator(hex_validator)
             
         else:
-            original_ascii_text = self.get_original_text_from_yaml(index)
+            # HEX -> ASCII
+            current_text = self.lineedits[index].text()
+            
+            # Only convert to ASCII if the current text looks like HEX data
+            import re
+            if re.match(r'^[0-9A-Fa-f\s]*$', current_text.strip()) and current_text.strip():
+                try:
+                    # Try to convert HEX to ASCII
+                    ascii_text = self.hex_to_ascii(current_text)
+                    # Check if the conversion resulted in readable text
+                    if ascii_text and ascii_text != current_text:
+                        display_text = ascii_text
+                    else:
+                        # If conversion failed or resulted in same text, use original
+                        display_text = self.get_original_text_from_yaml(index)
+                except:
+                    # If conversion failed, use original text from YAML
+                    display_text = self.get_original_text_from_yaml(index)
+            else:
+                # If current text doesn't look like HEX, use original from YAML
+                display_text = self.get_original_text_from_yaml(index)
 
             self.lineedits[index].blockSignals(True)
-            self.lineedits[index].setText(original_ascii_text)
+            self.lineedits[index].setText(display_text)
             self.lineedits[index].blockSignals(False)
             
-            self.sendline_btns[index].setText("ASCII")
             self.hex_modes[index] = False
             
-            self.sendline_btns[index].setStyleSheet("")
-            self.lineedits[index].setStyleSheet("")
+            ascii_icon_path = utils.get_resources("ascii_icon.png")
+            if os.path.exists(ascii_icon_path):
+                self.mode_labels[index].setPixmap(QIcon(ascii_icon_path).pixmap(20, 20))
+                self.mode_labels[index].setText("")
+            else:
+                self.mode_labels[index].setText("ASC")
+                self.mode_labels[index].setStyleSheet("font-size: 10px; font-weight: bold; color: #555; border: 1px solid #ccc; border-radius: 3px;")
+            
+            self.mode_labels[index].setToolTip("ASCII mode - Click to toggle HEX/ASCII")
+            
             self.lineedits[index].setPlaceholderText("")
             self.lineedits[index].setValidator(None)
 
@@ -1889,6 +1959,7 @@ class SerialTerminal(QMainWindow):
                             sep = lines[i+1]
                             full_line = line + sep
                             is_complete, incomplete_pos = utils.is_ansi_sequence_complete(full_line)
+
                             if is_complete:
                                 emit_batch.append(full_line)
                             else:
@@ -1939,11 +2010,12 @@ class SerialTerminal(QMainWindow):
 
     def sequential_send_commands(self):
         if self.serial and self.serial.is_open:
-            # Collect all commands to send with their time intervals
+            # Collect all commands to send with their time intervals and hex mode info
             commands_to_send = []
             
-            # Load time intervals from YAML file
+            # Load time intervals and hexmode from YAML file
             time_intervals = {}
+            hex_modes = {}
             try:
                 with open(self.current_cmdlist_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
@@ -1952,6 +2024,7 @@ class SerialTerminal(QMainWindow):
                         idx = item.get("index")
                         if idx is not None:
                             time_intervals[idx] = item.get("time", 1.0)  # Default 1 second
+                            hex_modes[idx] = item.get("hexmode", False)  # Default False
             except Exception:
                 pass
             
@@ -1959,8 +2032,11 @@ class SerialTerminal(QMainWindow):
                 lineedit = self.lineedits[i]
                 checkbox = self.checkboxes[i]
                 if lineedit.text() and checkbox.isChecked():
-                    time_interval = time_intervals.get(i, 1.0)  # Default 1 second if not found
-                    commands_to_send.append((i, lineedit.text(), time_interval))
+                    # Calculate the original index based on current page
+                    original_index = self.current_page * LINEEDIT_MAX_NUMBER + i
+                    time_interval = time_intervals.get(original_index, 1.0)
+                    is_hex_mode = hex_modes.get(original_index, False)
+                    commands_to_send.append((i, lineedit.text(), time_interval, is_hex_mode))
             
             if commands_to_send:
                 # Disable the sequential button during execution
@@ -1974,31 +2050,42 @@ class SerialTerminal(QMainWindow):
                     error_msg = ""
                     
                     try:
-                        for idx, (i, command, time_interval) in enumerate(commands_to_send):
+                        for idx, (i, command, time_interval, is_hex_mode) in enumerate(commands_to_send):
                             if not self.serial or not self.serial.is_open:
                                 success = False
                                 error_msg = "Serial connection lost"
                                 break
                                 
                             try:
-                                command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
+                                # Determine how to send the command based on hexmode
+                                if is_hex_mode:
+                                    # Send as HEX bytes
+                                    command_bytes = self.hex_text_to_bytes(command)
+                                    display_command = f"HEX: {command}"
+                                else:
+                                    # Send as ASCII with CRLF
+                                    command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
+                                    display_command = f"{command}"
+                                
                                 bytes_written = self.serial.write(command_bytes)
                                 
                                 # Update status bar with success message including time interval
-                                def update_status(cmd, num, total, interval):
-                                    self.update_status_bar(f"Sequential Send [{num}/{total}]: {cmd} (delay: {interval}s)")
+                                def update_status(cmd, num, total, interval, hex_mode):
+                                    mode_str = "HEX" if hex_mode else "ASCII"
+                                    self.update_status_bar(f"Sequential Send [{num}/{total}] ({mode_str}): {cmd} (delay: {interval}s)")
                                 
-                                QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval: update_status(cmd, num, total, interval))
+                                QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval, hex_mode=is_hex_mode: update_status(cmd, num, total, interval, hex_mode))
                                 
                                 # Display sent command in terminal for verification
-                                self.serial_data_signal.emit(f"{command}\r\n")
+                                self.serial_data_signal.emit(f"{display_command}\r\n")
                                 
-                                # Add to history using utils
-                                self.command_history = utils.add_to_history(
-                                    self.command_history, 
-                                    command,
-                                    utils.get_history_settings().get("max_count", 50)
-                                )
+                                # Add to history using utils (only for ASCII commands)
+                                if not is_hex_mode:
+                                    self.command_history = utils.add_to_history(
+                                        self.command_history, 
+                                        command,
+                                        utils.get_history_settings().get("max_count", 50)
+                                    )
                                 
                                 # Wait for the specified time interval before sending next command
                                 time.sleep(time_interval)
