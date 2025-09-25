@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox, QLabel, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont 
+from PySide6.QtGui import QFont, QKeySequence 
 import utils
 
 SETTINGS_PATH = os.path.join(
@@ -303,6 +303,9 @@ class SettingsDialog(QDialog):
         
         layout.addLayout(button_layout)
         self.setLayout(layout)
+        
+        self.apply_btn.setDefault(True)
+        self.apply_btn.setFocus()
         
         # Initialize settings
         self.settings = {}
