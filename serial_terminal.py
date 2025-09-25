@@ -619,9 +619,10 @@ class SerialTerminal(QMainWindow):
         self.current_input_buffer += char
         self.history_index = -1  # Reset history index on new input
         
-        # Display the input character immediately
-        self.terminal_widget.append_text(char)
-        self.show_current_input()
+        # Use append_text_to_current_line for consistent text addition
+        self.terminal_widget.append_text_to_current_line(char)
+        # Set cursor to end of last line without additional processing
+        self.terminal_widget.set_cursor_to_end()
 
     def handle_backspace(self):
         """Handle backspace key"""
@@ -631,7 +632,8 @@ class SerialTerminal(QMainWindow):
             self.history_index = -1
             # Remove last character from terminal display
             self.terminal_widget.remove_last_char()
-            self.show_current_input()
+            # Set cursor to end of last line
+            self.terminal_widget.set_cursor_to_end()
 
     def handle_enter(self):
         """Handle Enter key press"""
@@ -668,7 +670,8 @@ class SerialTerminal(QMainWindow):
             self.clear_current_input_completely()
             self.history_index += 1
             self.current_input_buffer = self.command_history[self.history_index]
-            self.terminal_widget.append_text(self.current_input_buffer)
+            # Use append_text_to_current_line to avoid spacing issues
+            self.terminal_widget.append_text_to_current_line(self.current_input_buffer)
             self.terminal_widget.set_cursor_to_end()
 
     def handle_history_down(self):
@@ -677,7 +680,8 @@ class SerialTerminal(QMainWindow):
         if self.history_index > 0:
             self.history_index -= 1
             self.current_input_buffer = self.command_history[self.history_index]
-            self.terminal_widget.append_text(self.current_input_buffer)
+            # Use append_text_to_current_line to avoid spacing issues
+            self.terminal_widget.append_text_to_current_line(self.current_input_buffer)
         elif self.history_index == 0:
             self.history_index = -1
             self.current_input_buffer = ""
@@ -747,9 +751,29 @@ class SerialTerminal(QMainWindow):
             line_text = self.terminal_widget._line_text(line_parts)
             # If the last line ends with the input buffer, remove that part
             if len(line_text) >= total_len:
-                new_text = line_text[:-total_len]
-                # Ignore color info, make a single line
-                self.terminal_widget.lines[-1] = [(new_text, self.terminal_widget.default_color)] if new_text else []
+                new_text_length = len(line_text) - total_len
+                
+                # Preserve color information by truncating text while keeping colors
+                new_line_parts = []
+                current_length = 0
+                
+                for text_part, color in line_parts:
+                    if current_length + len(text_part) <= new_text_length:
+                        # This part is completely within the preserved text
+                        new_line_parts.append((text_part, color))
+                        current_length += len(text_part)
+                    elif current_length < new_text_length:
+                        # This part needs to be truncated
+                        remaining_chars = new_text_length - current_length
+                        truncated_text = text_part[:remaining_chars]
+                        if truncated_text:
+                            new_line_parts.append((truncated_text, color))
+                        break
+                    else:
+                        # This part is completely beyond the preserved text
+                        break
+                
+                self.terminal_widget.lines[-1] = new_line_parts
             else:
                 # If the whole line is shorter than the input, just clear it
                 self.terminal_widget.lines[-1] = []

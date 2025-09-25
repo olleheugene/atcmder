@@ -8,10 +8,40 @@ MAX_TERMINAL_LINES = 9999
 class TerminalWidget(QAbstractScrollArea):
     def __init__(self, parent=None, font_family="Monaco", font_size=14):
         super().__init__(parent)
-        self.font = QFont(font_family, font_size)
+        
+        # Set up monospace font with multiple fallbacks
+        self.font = QFont()
+        # Try common monospace fonts in order
+        monospace_fonts = [font_family, "Monaco", "Consolas", "Menlo", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"]
+        
+        for font_name in monospace_fonts:
+            test_font = QFont(font_name, font_size)
+            test_font.setStyleHint(QFont.StyleHint.Monospace)
+            test_font.setFixedPitch(True)
+            test_font.setKerning(False)
+            test_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0)  # Remove extra spacing
+            
+            # Check if this font is truly monospace
+            test_metrics = QFontMetrics(test_font)
+            char_m_width = test_metrics.horizontalAdvance('M')
+            char_i_width = test_metrics.horizontalAdvance('i')
+            char_w_width = test_metrics.horizontalAdvance('W')
+            char_0_width = test_metrics.horizontalAdvance('0')
+            
+            # If all characters have the same width, it's truly monospace
+            if char_m_width == char_i_width == char_w_width == char_0_width:
+                self.font = test_font
+                break
+        
+        # Ensure monospace properties are set
         self.font.setStyleHint(QFont.StyleHint.Monospace)
+        self.font.setFixedPitch(True)
+        self.font.setKerning(False)  # Disable kerning for consistent spacing
+        self.font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0)  # Remove extra spacing
+        
         self.font_metrics = QFontMetrics(self.font)
         self.line_height = self.font_metrics.height()
+        # Use consistent character width for monospace font
         self.char_width = self.font_metrics.horizontalAdvance('M')
         self.lines = []
         self.scroll_offset = 0
@@ -240,6 +270,8 @@ class TerminalWidget(QAbstractScrollArea):
     def paintEvent(self, event):
         painter = QPainter(self.viewport())
         painter.setFont(self.font)
+        # Set text rendering hints for better alignment
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         painter.fillRect(self.viewport().rect(), QColor(30, 30, 30))
         
         if not self.lines:
@@ -306,8 +338,8 @@ class TerminalWidget(QAbstractScrollArea):
                 if sel_start[0] <= line_idx <= sel_end[0]:
                     sel_col_start = sel_start[1] if line_idx == sel_start[0] else 0
                     sel_col_end = sel_end[1] if line_idx == sel_end[0] else self._line_length(line_parts)
-                    x1 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_start])
-                    x2 = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:sel_col_end])
+                    x1 = x + sel_col_start * self.char_width
+                    x2 = x + sel_col_end * self.char_width
                     x2 = min(x2, effective_width - 5)
                     # Only draw if within visible text area
                     if x2 > text_start_x and x1 < effective_width:
@@ -318,8 +350,8 @@ class TerminalWidget(QAbstractScrollArea):
             if self.search_text:
                 for idx, match in enumerate(self.search_matches):
                     if match[0] == line_idx:
-                        start_px = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:match[1]])
-                        end_px = x + self.font_metrics.horizontalAdvance(self._line_text(line_parts)[:match[2]])
+                        start_px = x + match[1] * self.char_width
+                        end_px = x + match[2] * self.char_width
                         # Only draw if within visible text area
                         if end_px > text_start_x and start_px < effective_width:
                             start_px = max(start_px, text_start_x)
@@ -332,33 +364,46 @@ class TerminalWidget(QAbstractScrollArea):
             for text_part, color in line_parts:
                 if text_part and x < effective_width - 5:
                     painter.setPen(color)
-                    text_width = self.font_metrics.horizontalAdvance(text_part)
+                    
+                    # Calculate text width using fixed character width
+                    text_width = len(text_part) * self.char_width
+                    
+                    # Check if we need to truncate
                     if x + text_width > effective_width - 5:
                         available_width = effective_width - 5 - x
                         if available_width > 0:
-                            truncated_text = ""
-                            current_width = 0
-                            for char in text_part:
-                                char_width = self.font_metrics.horizontalAdvance(char)
-                                if current_width + char_width > available_width:
-                                    break
-                                truncated_text += char
-                                current_width += char_width
-                            if truncated_text:
-                                painter.drawText(x, y_line, truncated_text)
+                            chars_that_fit = max(0, int(available_width / self.char_width))
+                            if chars_that_fit > 0:
+                                # Draw truncated text character by character
+                                for i in range(chars_that_fit):
+                                    char_x = x + i * self.char_width
+                                    painter.drawText(char_x, y_line, text_part[i])
                         break
                     else:
                         # Only draw if text is in visible area
                         if x + text_width > text_start_x:
-                            painter.drawText(x, y_line, text_part)
+                            # Draw text character by character at fixed positions
+                            for i, char in enumerate(text_part):
+                                char_x = x + i * self.char_width
+                                if char_x >= text_start_x and char_x < effective_width - 5:
+                                    painter.drawText(char_x, y_line, char)
                         x += text_width
             
             if (self.cursor_visible and 
                 line_idx == self.cursor_line and 
                 self.hasFocus()):
-                cursor_x = text_start_x + 5 - h_scroll_offset + self.font_metrics.horizontalAdvance(
-                    self._line_text(line_parts)[:self.cursor_col]
-                )
+                # Calculate cursor position based on actual text rendering
+                if line_idx < len(self.lines):
+                    line_text = self._line_text(self.lines[line_idx])
+                    if self.cursor_col <= len(line_text):
+                        # Calculate actual text width up to cursor position
+                        text_before_cursor = line_text[:self.cursor_col]
+                        cursor_x = text_start_x + 5 - h_scroll_offset + len(text_before_cursor) * self.char_width
+                    else:
+                        cursor_x = text_start_x + 5 - h_scroll_offset + len(line_text) * self.char_width
+                else:
+                    cursor_x = text_start_x + 5 - h_scroll_offset
+                    
                 if cursor_x >= text_start_x and cursor_x < effective_width - 5:
                     painter.setPen(QColor(200, 255, 200))
                     painter.drawRect(cursor_x, y, 2, self.line_height)
@@ -371,6 +416,9 @@ class TerminalWidget(QAbstractScrollArea):
 
     def _line_text(self, line_parts):
         return ''.join(part for part, _ in line_parts)
+
+    def _line_length(self, line_parts):
+        return len(self._line_text(line_parts))
 
     def _line_length(self, line_parts):
         return len(self._line_text(line_parts))
@@ -458,7 +506,9 @@ class TerminalWidget(QAbstractScrollArea):
         max_line_width = 0
         if self.lines:
             for line_parts in self.lines:
-                line_width = sum(self.font_metrics.horizontalAdvance(text_part) for text_part, _ in line_parts)
+                line_text = self._line_text(line_parts)
+                # Use fixed character width for consistent calculation
+                line_width = len(line_text) * self.char_width
                 max_line_width = max(max_line_width, line_width)
         
         content_width = max_line_width + (self.char_width * 2) + 10
@@ -657,18 +707,15 @@ class TerminalWidget(QAbstractScrollArea):
         if (self.show_line_numbers or self.show_timestamps) and pos.x() < text_start_x:
             return (line, 0)
         
-        text = self._line_text(self.lines[line]) if self.lines else ""
-        col = 0
-        acc = 0
+        text = self._line_text(self.lines[line]) if line < len(self.lines) else ""
         
-        for i, ch in enumerate(text):
-            w = self.font_metrics.horizontalAdvance(ch)
-            if acc + w // 2 >= x:
-                col = i
-                break
-            acc += w
-        else:
-            col = len(text)
+        if not text:
+            return (line, 0)
+        
+        # Simple character position calculation for monospace font
+        # Convert x position to character column using fixed char width
+        col = int((x + self.char_width * 0.5) / self.char_width)
+        col = max(0, min(col, len(text)))
         
         return (line, col)
 
@@ -814,19 +861,52 @@ class TerminalWidget(QAbstractScrollArea):
         """Remove the last character from the last line"""
         if not self.lines:
             return
-        if self.lines[-1]:
-            last_text, last_color = self.lines[-1][-1]
-            if len(last_text) > 1:
-                # Shorten the last text part
-                self.lines[-1][-1] = (last_text[:-1], last_color)
-            else:
-                # Remove the last text part completely
-                self.lines[-1].pop()
-                if not self.lines[-1] and len(self.lines) > 1:
-                    # Remove empty line if it's not the only line
-                    self.lines.pop()
-        else:
-            # Current line is empty, remove previous line
+            
+        if not self.lines[-1]:
+            # Current line is empty, remove previous line if exists
             if len(self.lines) > 1:
                 self.lines.pop()
+            self._schedule_update()
+            return
+        
+        # Find the last non-empty text part
+        for i in range(len(self.lines[-1]) - 1, -1, -1):
+            text_part, color = self.lines[-1][i]
+            if text_part:
+                if len(text_part) > 1:
+                    # Shorten the last text part
+                    self.lines[-1][i] = (text_part[:-1], color)
+                else:
+                    # Remove the last text part completely
+                    self.lines[-1].pop(i)
+                break
+        
+        # If the line became empty, ensure it's not completely removed unless it's not the last line
+        if not self.lines[-1] and len(self.lines) > 1:
+            # Check if this is truly an empty line or just no text parts
+            self.lines.pop()
+            
+        self._schedule_update()
+
+    def append_text_to_current_line(self, text):
+        """Append text to the current line without creating a new line"""
+        if not text:
+            return
+            
+        if not self.lines:
+            self.lines.append([])
+        
+        # Parse ANSI colors but don't create new lines
+        parsed = self.parse_ansi_text(text)
+        
+        # Merge consecutive parts with same color
+        for part, color in parsed:
+            if self.lines[-1] and self.lines[-1][-1][1] == color:
+                # Merge with the last part if same color
+                last_text, last_color = self.lines[-1][-1]
+                self.lines[-1][-1] = (last_text + part, color)
+            else:
+                # Add as new part
+                self.lines[-1].append((part, color))
+        
         self._schedule_update()
