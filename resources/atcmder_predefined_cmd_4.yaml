@@ -1,70 +1,70 @@
-- index: 0
+- index: 0    # The first command in the list will be used as the title
   checked: false
   title:
-    text: AT+CEREG=1
-    disabled: false
+    text: "2.4GHz RADIO TEST Commands"
+    disabled: true
   time: 5.0
   hexmode: false
-- index: 1
-  checked: false
+- index: 1 
+  checked: true
   title:
-    text: AT%XBANDLOCK=2,"10000100"
+    text: "data_rate ble_1Mbit"
     disabled: false
   time: 0.5
   hexmode: false
 - index: 2
-  checked: false
+  checked: true
   title:
-    text: AT%XUSIMLCK=1,"PN","123456789",1,"450.04:450.08"
+    text: "output_power pos4dBm"
     disabled: false
   time: 0.5
   hexmode: false
 - index: 3
-  checked: false
+  checked: true
   title:
-    text: AT%XUSIMLCK=2,"PN","123456789"
+    text: "start_channel 2"
     disabled: false
   time: 0.5
   hexmode: false
 - index: 4
   checked: false
   title:
-    text: AT+CPSMS=1,"","","10100010","00100001"
+    text: "start_duty_cycle_modulated_tx 90"
     disabled: false
   time: 0.5
   hexmode: false
 - index: 5
   checked: false
   title:
-    text: AT+CFUN=0
+    text: "trasnmit_pattern pattern_11110000"
     disabled: false
-  time: 0.01
+  time: 0.5
   hexmode: false
 - index: 6
   checked: false
   title:
-    text: AT%XMODEMTRACE=1,2
+    text: "cancel"
     disabled: false
-  time: 0.01
-  hexmode: false
+  time: 0.5
+  hexmode: true
 - index: 7
   checked: false
   title:
-    text: AT%XFACTORYRESET=0
+    text: "start_tx_carrier"
     disabled: false
-  time: 0.01
+  time: 0.5
   hexmode: false
 - index: 8
   checked: false
   title:
-    text: AT+CFUN=4
+    text: "start_rx"
     disabled: false
-  time: 0.01
+  time: 0.5
   hexmode: false
 - index: 9
   checked: false
   title:
-    text: AT+CFUN=1
+    text: "print_rx"
     disabled: false
-  time: 0.01
+  time: 0.5
   hexmode: false

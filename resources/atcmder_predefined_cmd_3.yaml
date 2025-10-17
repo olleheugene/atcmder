@@ -1,70 +1,70 @@
 - index: 0
   checked: false
   title:
-    text: ""
+    text: AT+CGDCONT=0,"IP","",,,,0,,,,0,0
     disabled: false
   time: 5.0
   hexmode: false
 - index: 1
-  checked: true
+  checked: false
   title:
-    text: ""
+    text: AT+CGDCONT=0,"IP","",,,,0,,,,1,0
     disabled: false
   time: 0.5
   hexmode: false
 - index: 2
-  checked: true
+  checked: false
   title:
-    text: ""
+    text: AT#XPING="8.8.8.8",1,1000,1,1000
     disabled: false
   time: 0.5
   hexmode: false
 - index: 3
-  checked: true
+  checked: false
   title:
-    text: ""
+    text: AT+COPS=1,2,"45008",7
     disabled: false
   time: 0.5
   hexmode: false
 - index: 4
-  checked: true
+  checked: false
   title:
-    text: ""
+    text: AT+COPS?
     disabled: false
   time: 0.5
   hexmode: false
 - index: 5
   checked: false
   title:
-    text: ""
+    text: AT#XUDPCLI=2,"[64:FF94::DC7A:0CEF]",4242
     disabled: false
   time: 0.5
   hexmode: false
 - index: 6
   checked: false
   title:
-    text: ""
+    text: AT#XUDPSEND="12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"
     disabled: false
   time: 0.5
   hexmode: false
 - index: 7
   checked: false
   title:
-    text: ""
+    text: AT%HWVERSION
     disabled: false
   time: 0.5
   hexmode: false
 - index: 8
   checked: false
   title:
-    text: ""
+    text: at#xsms=1
     disabled: false
   time: 0.5
   hexmode: false
 - index: 9
   checked: false
   title:
-    text: ""
+    text: at#xsms=2,"+11212341234","SLM test"
     disabled: false
   time: 0.5
   hexmode: false

@@ -1,70 +1,70 @@
 - index: 0
   checked: false
   title:
-    text: "CELLULAR AT COMMAND"
-    disabled: true
+    text: AT+CGMR
+    disabled: false
   time: 5.0
   hexmode: false
 - index: 1
-  checked: true
+  checked: false
   title:
-    text: "AT+CFUN=1"
+    text: AT+CGSN=1
     disabled: false
   time: 0.5
   hexmode: false
 - index: 2
-  checked: true
+  checked: false
   title:
-    text: "AT%XICCID"
+    text: AT%XICCID
     disabled: false
   time: 0.5
   hexmode: false
 - index: 3
-  checked: true
+  checked: false
   title:
-    text: "AT+CIMI"
+    text: AT+CGDCONT?
     disabled: false
   time: 0.5
   hexmode: false
 - index: 4
-  checked: true
+  checked: false
   title:
-    text: "AT+COPS=1,2,\"24407\""
+    text: AT#XTCPCLI=2,"[64:FF94::DC7A:0CEF]",4242
     disabled: false
   time: 0.5
   hexmode: false
 - index: 5
   checked: false
   title:
-    text: "AT+CPSMS=1,\"\",\"\",\"10101010\",\"00100001\""
+    text: AT#XTCPSEND="12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"
     disabled: false
   time: 0.5
   hexmode: false
 - index: 6
   checked: false
   title:
-    text: "AT+CEDRXS=1,4,\"1000\""
+    text: AT#XPING="ipv6.google.com",45,5000,5,1000
     disabled: false
   time: 0.5
   hexmode: false
 - index: 7
   checked: false
   title:
-    text: "AT%XOPCONF=17"
+    text: AT#FOTA
     disabled: false
   time: 0.5
   hexmode: false
 - index: 8
   checked: false
   title:
-    text: "AT%POWERCLASS=3"
+    text: AT#USIMOTA
     disabled: false
   time: 0.5
   hexmode: false
 - index: 9
   checked: false
   title:
-    text: "AT%PERIODICSEARCHCONF=0,0,0,1,\"0,10,40,5,15\",\"1,60,90,300\""
+    text: AT%XMODEMTRACE=1,2
     disabled: false
   time: 0.5
   hexmode: false

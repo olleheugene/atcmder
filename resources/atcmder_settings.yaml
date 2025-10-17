@@ -1,8 +1,11 @@
-- font:
-    name: Monaco
-    size: 11
-    bold: false
-- theme: default
-- output_window:
-    show_line_numbers: true
-    show_time: false
+font:
+  name: Monaco
+  size: 11
+  bold: false
+theme: dark
+output_window:
+  show_line_numbers: true
+  show_time: false
+current_command_group: 1
+command_group_count: 4
+keep_hex_mode: true
