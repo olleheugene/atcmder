@@ -3,6 +3,8 @@ import os
 import sys
 from PyInstaller.utils.hooks import collect_all
 
+app_name = 'atcmder'
+
 def collect_resources():
     data_files = []
     resource_dir = 'resources'
@@ -58,7 +60,7 @@ if sys.platform.startswith('darwin'):
             a.binaries,
             a.datas,
             [],
-            name='atcmder',
+            name=app_name,
             debug=False,
             bootloader_ignore_signals=False,
             strip=False,
@@ -86,7 +88,7 @@ else:
         a.zipfiles,
         a.datas,
         [],
-        name='atcmder',
+        name=app_name,
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
