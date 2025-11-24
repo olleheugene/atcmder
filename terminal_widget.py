@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy
-from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices
+from PySide6.QtCore import Qt, QTimer, QUrl
 import re
 
 MAX_TERMINAL_LINES = 9999
@@ -105,6 +105,26 @@ class TerminalWidget(QAbstractScrollArea):
         self.show_timestamps = False
         self.timestamp_width = 0
         self.timestamp_padding = 4  # Padding between timestamp and text
+
+        # URL detection
+        self.url_pattern = re.compile(r'((?:https?|ftp)://[^\s<>"\)]+)')
+        self.hovered_url = None
+        self._mouse_press_pos = None
+        self._mouse_press_linecol = None
+        self.viewport().setCursor(Qt.IBeamCursor)
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
+
+    def _url_at(self, line_idx, col):
+        """Return URL at given line/column if present."""
+        if line_idx < 0 or line_idx >= len(self.lines):
+            return None
+        text = self._line_text(self.lines[line_idx])
+        for match in self.url_pattern.finditer(text):
+            start, end = match.span()
+            if start <= col <= end:
+                return match.group(0)
+        return None
 
     def _toggle_cursor(self):
         """Toggle cursor visibility for blinking effect"""
@@ -322,7 +342,10 @@ class TerminalWidget(QAbstractScrollArea):
         y = 5
         for line_idx in range(start_line, end_line):
             line_parts = self.lines[line_idx]
-            x = text_start_x + 5 - h_scroll_offset
+            line_text_full = self._line_text(line_parts)
+            line_url_matches = list(self.url_pattern.finditer(line_text_full)) if line_text_full else []
+            line_base_x = text_start_x + 5 - h_scroll_offset
+            x = line_base_x
             y_line = y + self.font_metrics.ascent()
             
             # Draw line number
@@ -388,6 +411,21 @@ class TerminalWidget(QAbstractScrollArea):
                                 if char_x >= text_start_x and char_x < effective_width - 5:
                                     painter.drawText(char_x, y_line, char)
                         x += text_width
+
+            # Draw URL underline after text so it stays visible
+            if line_url_matches:
+                painter.save()
+                painter.setPen(QColor(90, 170, 255))
+                underline_y = min(y + self.line_height - 2, effective_height - 1)
+                for match in line_url_matches:
+                    start_col, end_col = match.span()
+                    start_px = line_base_x + start_col * self.char_width
+                    end_px = line_base_x + end_col * self.char_width
+                    if end_px > text_start_x and start_px < effective_width - 5:
+                        start_px = max(start_px, text_start_x)
+                        end_px = min(end_px, effective_width - 5)
+                        painter.drawLine(start_px, underline_y, end_px, underline_y)
+                painter.restore()
             
             if (self.cursor_visible and 
                 line_idx == self.cursor_line and 
@@ -644,6 +682,10 @@ class TerminalWidget(QAbstractScrollArea):
             self.selection_start = (line, col)
             self.selection_end = (line, col)
             self.is_selecting = True
+            self._mouse_press_pos = event.pos()
+            self._mouse_press_linecol = (line, col)
+            self.hovered_url = None
+            self.viewport().setCursor(Qt.IBeamCursor)
             self.viewport().update()
 
     def mouseMoveEvent(self, event):
@@ -651,11 +693,34 @@ class TerminalWidget(QAbstractScrollArea):
             line, col = self._pos_to_linecol(event.pos())
             self.selection_end = (line, col)
             self.viewport().update()
+        self._update_hover_state(event.pos())
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.is_selecting = False
+            click_url = None
+            if self._mouse_press_pos is not None:
+                distance = (event.pos() - self._mouse_press_pos).manhattanLength()
+            else:
+                distance = None
+
+            # Treat as click if there was little movement and no selection
+            if (distance is None or distance < 6):
+                line, col = self._pos_to_linecol(event.pos())
+                if (self.selection_start and self.selection_end and 
+                        self.selection_start == self.selection_end):
+                    click_url = self._url_at(line, col)
             self.viewport().update()
+            self._mouse_press_pos = None
+            self._mouse_press_linecol = None
+
+            if click_url:
+                QDesktopServices.openUrl(QUrl(click_url))
+                self.selection_start = None
+                self.selection_end = None
+                self.viewport().setCursor(Qt.IBeamCursor)
+            else:
+                self._update_hover_state(event.pos())
 
     def mouseDoubleClickEvent(self, event):
         """Handle double-click to select word"""
@@ -674,6 +739,11 @@ class TerminalWidget(QAbstractScrollArea):
                 self.selection_end = (line, end_col)
                 self.is_selecting = False
                 self.viewport().update()
+
+    def leaveEvent(self, event):
+        self.hovered_url = None
+        self.viewport().setCursor(Qt.IBeamCursor)
+        super().leaveEvent(event)
 
     def _pos_to_linecol(self, pos):
         """Convert pixel position to line/column coordinates"""
@@ -718,6 +788,18 @@ class TerminalWidget(QAbstractScrollArea):
         col = max(0, min(col, len(text)))
         
         return (line, col)
+
+    def _update_hover_state(self, pos):
+        """Update hovered URL and cursor style"""
+        line, col = self._pos_to_linecol(pos)
+        url = self._url_at(line, col)
+        if url:
+            if self.hovered_url != url:
+                self.hovered_url = url
+            self.viewport().setCursor(Qt.PointingHandCursor)
+        else:
+            self.hovered_url = None
+            self.viewport().setCursor(Qt.IBeamCursor)
 
     def _find_word_boundaries(self, text, col):
         """Find the start and end of a word at the given column"""
