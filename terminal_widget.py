@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, QRect
 import re
 
 MAX_TERMINAL_LINES = 9999
@@ -350,10 +350,17 @@ class TerminalWidget(QAbstractScrollArea):
             
             # Draw line number
             if self.show_line_numbers:
+                painter.save()
+                painter.setClipping(False)
                 painter.setPen(QColor(120, 120, 120))  # Gray color for line numbers
                 line_number = str(line_idx + 1)  # 1-based line numbering
                 line_number_x = self.line_number_width - self.line_number_padding - self.font_metrics.horizontalAdvance(line_number)
                 painter.drawText(line_number_x, y_line, line_number)
+                painter.restore()
+
+            text_clip_rect = QRect(text_start_x, y, max(0, effective_width - text_start_x), self.line_height)
+            painter.save()
+            painter.setClipRect(text_clip_rect)
             
             # Selection highlight
             if self.selection_start and self.selection_end:
@@ -446,6 +453,8 @@ class TerminalWidget(QAbstractScrollArea):
                     painter.setPen(QColor(200, 255, 200))
                     painter.drawRect(cursor_x, y, 2, self.line_height)
             
+            painter.restore()
+
             y += self.line_height
             if y > effective_height:
                 break
@@ -492,6 +501,14 @@ class TerminalWidget(QAbstractScrollArea):
         
         visible_lines = max(1, effective_height // self.line_height)
         total_lines = len(self.lines)
+
+        # Calculate gutter width (line numbers + timestamps) so we know actual text area width
+        text_start_x = 0
+        if self.show_line_numbers:
+            text_start_x += self.line_number_width
+        if self.show_timestamps:
+            text_start_x += self.timestamp_width
+        text_area_width = max(1, effective_width - text_start_x - 5)
         
         # Vertical Scrollbar 업데이트
         self.verticalScrollBar().blockSignals(True)
@@ -527,14 +544,14 @@ class TerminalWidget(QAbstractScrollArea):
                 if scroll_value <= self.verticalScrollBar().maximum():
                     self.verticalScrollBar().setValue(scroll_value)
         else:
-            # If there are no lines to display, return early
-            self.verticalScrollBar().setRange(0, min_range)
-            self.verticalScrollBar().setPageStep(min_range)
+            # Not enough content to require scrolling
+            self.verticalScrollBar().setRange(0, 0)
+            self.verticalScrollBar().setPageStep(visible_lines)
             self.verticalScrollBar().setValue(0)
-            
+
             if self.scroll_offset != 0:
                 self.scroll_offset = 0
-                
+
             # If there are not many lines, enable auto-scrolling
             self.auto_scroll = True
             
@@ -548,19 +565,18 @@ class TerminalWidget(QAbstractScrollArea):
                 # Use fixed character width for consistent calculation
                 line_width = len(line_text) * self.char_width
                 max_line_width = max(max_line_width, line_width)
-        
-        content_width = max_line_width + (self.char_width * 2) + 10
+        content_text_width = max_line_width + (self.char_width * 2) + 10
         
         self.horizontalScrollBar().blockSignals(True)
-        if content_width > effective_width:
-            max_h_scroll = content_width - effective_width
+        if content_text_width > text_area_width:
+            max_h_scroll = content_text_width - text_area_width
             self.horizontalScrollBar().setRange(0, max_h_scroll)
-            self.horizontalScrollBar().setPageStep(int(effective_width * 0.8))
+            self.horizontalScrollBar().setPageStep(int(text_area_width * 0.8))
             self.horizontalScrollBar().setSingleStep(self.char_width)
         else:
-            # Set a minimum range to always show the horizontal scrollbar
-            self.horizontalScrollBar().setRange(0, 10)
-            self.horizontalScrollBar().setPageStep(10)
+            # Not enough content to require horizontal scrolling
+            self.horizontalScrollBar().setRange(0, 0)
+            self.horizontalScrollBar().setPageStep(text_area_width)
             self.horizontalScrollBar().setValue(0)
         self.horizontalScrollBar().blockSignals(False)
 
@@ -602,6 +618,12 @@ class TerminalWidget(QAbstractScrollArea):
         """Enable or disable line number display"""
         self.show_line_numbers = show
         self._update_line_number_width()
+        self.update_scrollbar()
+        self.viewport().update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Recalculate scrollbars when the widget is resized to keep ranges accurate
         self.update_scrollbar()
         self.viewport().update()
 
