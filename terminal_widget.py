@@ -1014,3 +1014,7 @@ class TerminalWidget(QAbstractScrollArea):
                 self.lines[-1].append((part, color))
         
         self._schedule_update()
+
+    def export_text(self):
+        """Return terminal contents as a plain-text string."""
+        return '\n'.join(self._line_text(line_parts) for line_parts in self.lines)

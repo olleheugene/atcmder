@@ -332,10 +332,17 @@ class SerialTerminal(QMainWindow):
         self.clear_btn.setIconSize(QSize(20, 20))
         self.clear_btn.setToolTip("Clear terminal window")
         self.clear_btn.clicked.connect(self.clear_terminal)
+        self.save_btn = QPushButton()
+        self.save_btn.setIcon(QIcon(utils.get_resources(utils.SAVE_ICON_NAME)))
+        self.save_btn.setToolTip("Save terminal output to file")
+        self.save_btn.setFixedSize(28, 28)
+        self.save_btn.setIconSize(QSize(20, 20))
+        self.save_btn.clicked.connect(self.save_terminal_output)
         self.right_layout = QVBoxLayout()
         self.top_right_btn_layout = QHBoxLayout()
         self.top_right_btn_layout.addStretch()
         self.top_right_btn_layout.addWidget(self.clear_btn)
+        self.top_right_btn_layout.addWidget(self.save_btn)
         btn_v_layout = QVBoxLayout()
         btn_v_layout.addSpacing(10)
         btn_v_layout.addLayout(self.top_right_btn_layout)
@@ -833,6 +840,30 @@ class SerialTerminal(QMainWindow):
     def clear_terminal(self):
         """Clear terminal"""
         self.terminal_widget.clear()
+
+    def save_terminal_output(self):
+        """Save terminal contents to a text file"""
+        if not hasattr(self, 'terminal_widget') or not self.terminal_widget:
+            return
+
+        text = self.terminal_widget.export_text()
+        from datetime import datetime
+        default_name = datetime.now().strftime("terminal_%Y%m%d_%H%M%S.txt")
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Terminal Output",
+            default_name,
+            "Text Files (*.txt);;All Files (*)"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                self.update_status_bar(f"Saved terminal output to {os.path.basename(file_path)}")
+            except Exception as e:
+                QMessageBox.warning(self, "Save Error", f"Could not save file:\n{e}")
 
     def setup_terminal_font(self):
         """Terminal Font Settings"""
