@@ -98,6 +98,20 @@ class OutputTab(QWidget):
         
         management_group.setLayout(management_layout)
         layout.addWidget(management_group)
+        
+        # Line ending settings
+        line_ending_group = QGroupBox("Line Ending Settings")
+        line_ending_layout = QFormLayout()
+        
+        self.line_ending_combo = QComboBox()
+        self.line_ending_combo.addItems(["CR+LF (\\r\\n)", "CR (\\r)", "LF (\\n)"])
+        self.line_ending_combo.setCurrentIndex(0)  # Default to CR+LF
+        self.line_ending_combo.setToolTip("Select line ending format for serial commands")
+        
+        line_ending_layout.addRow("Line Ending:", self.line_ending_combo)
+        
+        line_ending_group.setLayout(line_ending_layout)
+        layout.addWidget(line_ending_group)
 
         layout.addStretch()
         self.setLayout(layout)
@@ -138,6 +152,18 @@ class OutputTab(QWidget):
         self.max_count_spin.setValue(history_settings.get("max_count", 50))
         self.auto_save_check.setChecked(history_settings.get("auto_save", True))
         self.update_history_count()
+        
+        # Load line ending settings
+        terminal_settings = settings.get('terminal', {})
+        line_ending = terminal_settings.get('line_ending', 'CR+LF')
+        if line_ending == 'CR+LF':
+            self.line_ending_combo.setCurrentIndex(0)
+        elif line_ending == 'CR':
+            self.line_ending_combo.setCurrentIndex(1)
+        elif line_ending == 'LF':
+            self.line_ending_combo.setCurrentIndex(2)
+        else:
+            self.line_ending_combo.setCurrentIndex(0)  # Default to CR+LF
 
     def save_settings(self, settings):
         # Save font settings
@@ -153,6 +179,20 @@ class OutputTab(QWidget):
         import utils
         current_history = utils.load_command_history()
         utils.save_command_history(current_history, self.max_count_spin.value())
+        
+        # Save line ending settings
+        if 'terminal' not in settings:
+            settings['terminal'] = {}
+        
+        current_text = self.line_ending_combo.currentText()
+        if current_text.startswith('CR+LF'):
+            settings['terminal']['line_ending'] = 'CR+LF'
+        elif current_text.startswith('CR '):
+            settings['terminal']['line_ending'] = 'CR'
+        elif current_text.startswith('LF'):
+            settings['terminal']['line_ending'] = 'LF'
+        else:
+            settings['terminal']['line_ending'] = 'CR+LF'  # Default
 
 class WindowsTab(QWidget):
     def __init__(self, parent_dialog=None):
@@ -324,7 +364,8 @@ class SettingsDialog(QDialog):
             settings = {
                 'font': {'name': 'Monaco', 'size': 11, 'bold': False},
                 'theme': 'default',
-                'output_window': {'show_line_numbers': False, 'show_time': False}
+                'output_window': {'show_line_numbers': False, 'show_time': False},
+                'terminal': {'line_ending': 'CR+LF'}
             }
         else:
             try:
@@ -355,13 +396,15 @@ class SettingsDialog(QDialog):
                 settings.setdefault('font', {'name': 'Monaco', 'size': 11, 'bold': False})
                 settings.setdefault('theme', 'default')
                 settings.setdefault('output_window', {'show_line_numbers': False, 'show_time': False})
+                settings.setdefault('terminal', {'line_ending': 'CR+LF'})
                 
             except Exception as e:
                 print(f"Error loading settings: {e}")
                 settings = {
                     'font': {'name': 'Monaco', 'size': 11, 'bold': False},
                     'theme': 'default',
-                    'output_window': {'show_line_numbers': False, 'show_time': False}
+                    'output_window': {'show_line_numbers': False, 'show_time': False},
+                    'terminal': {'line_ending': 'CR+LF'}
                 }
         
         # Load settings into tabs
@@ -399,6 +442,7 @@ class SettingsDialog(QDialog):
             data['font'] = self.settings['font']
             data['theme'] = self.settings['theme']
             data['output_window'] = self.settings['output_window']
+            data['terminal'] = self.settings['terminal']
             
             if 'command_group_count' in self.settings:
                 data['command_group_count'] = self.settings['command_group_count']

@@ -70,6 +70,7 @@ class SerialTerminal(QMainWindow):
         self.command_history = []
         self.history_index = -1
         self.current_input_buffer = ""
+        self.line_ending = "\r\n"  # Default to CR+LF
 
         self._status_timer = QTimer()
         self._status_timer.setSingleShot(True)
@@ -641,7 +642,7 @@ class SerialTerminal(QMainWindow):
         
         self.terminal_widget.append_text("\n")
 
-        command_to_send = self.current_input_buffer.rstrip() + "\r\n"
+        command_to_send = self.current_input_buffer.rstrip() + self.line_ending
         self.serial.write(command_to_send.encode('utf-8', errors='replace'))
             
         # Add to command history using utils
@@ -1907,8 +1908,8 @@ class SerialTerminal(QMainWindow):
                         command,
                         utils.get_history_settings().get("max_count", 50)
                     )
-                    # Send command with carriage return and line feed
-                    command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
+                    # Send command with selected line ending
+                    command_bytes = (command + self.line_ending).encode('utf-8', errors='replace')
                     display_command = f"{command}"
                 
                 bytes_written = self.serial.write(command_bytes)
@@ -2088,8 +2089,8 @@ class SerialTerminal(QMainWindow):
                                     command_bytes = self.hex_text_to_bytes(command)
                                     display_command = f"HEX: {command}"
                                 else:
-                                    # Send as ASCII with CRLF
-                                    command_bytes = (command + "\r\n").encode('utf-8', errors='replace')
+                                    # Send as ASCII with selected line ending
+                                    command_bytes = (command + self.line_ending).encode('utf-8', errors='replace')
                                     display_command = f"{command}"
                                 
                                 bytes_written = self.serial.write(command_bytes)
@@ -2326,6 +2327,18 @@ class SerialTerminal(QMainWindow):
         
         self.apply_theme(theme_name)
         
+        # Apply line ending settings
+        terminal_settings = settings.get('terminal', {})
+        line_ending_setting = terminal_settings.get('line_ending', 'CR+LF')
+        if line_ending_setting == 'CR+LF':
+            self.line_ending = "\r\n"
+        elif line_ending_setting == 'CR':
+            self.line_ending = "\r"
+        elif line_ending_setting == 'LF':
+            self.line_ending = "\n"
+        else:
+            self.line_ending = "\r\n"  # Default to CR+LF
+        
         # Force UI update
         self.terminal_widget.update_scrollbar()
         self.terminal_widget.viewport().update()
@@ -2395,6 +2408,18 @@ class SerialTerminal(QMainWindow):
         # Apply theme settings
         if hasattr(self, 'apply_theme'):
             self.apply_theme(self.settings['theme'])
+            
+        # Apply line ending settings
+        terminal_settings = self.settings.get('terminal', {})
+        line_ending_setting = terminal_settings.get('line_ending', 'CR+LF')
+        if line_ending_setting == 'CR+LF':
+            self.line_ending = "\r\n"
+        elif line_ending_setting == 'CR':
+            self.line_ending = "\r"
+        elif line_ending_setting == 'LF':
+            self.line_ending = "\n"
+        else:
+            self.line_ending = "\r\n"  # Default to CR+LF
         
         # Update UI elements
         self.terminal_widget.update_scrollbar()
