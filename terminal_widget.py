@@ -738,11 +738,29 @@ class TerminalWidget(QAbstractScrollArea):
 
             if click_url:
                 QDesktopServices.openUrl(QUrl(click_url))
-                self.selection_start = None
-                self.selection_end = None
-                self.viewport().setCursor(Qt.IBeamCursor)
-            else:
-                self._update_hover_state(event.pos())
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        copy_action = menu.addAction("Copy")
+        paste_action = menu.addAction("Paste")
+        select_all_action = menu.addAction("Select All")
+
+        has_selection = (
+            self.selection_start is not None and
+            self.selection_end is not None and
+            self.selection_start != self.selection_end
+        )
+        copy_action.setEnabled(has_selection)
+        paste_action.setEnabled(bool(QGuiApplication.clipboard().text()))
+        select_all_action.setEnabled(bool(self.lines))
+
+        chosen = menu.exec(event.globalPos())
+        if chosen == copy_action:
+            self.copy_selection()
+        elif chosen == paste_action:
+            self.request_paste.emit()
+        elif chosen == select_all_action:
+            self.select_all()
 
     def mouseDoubleClickEvent(self, event):
         """Handle double-click to select word"""
@@ -876,7 +894,17 @@ class TerminalWidget(QAbstractScrollArea):
         text = '\n'.join(lines)
         if text:
             QGuiApplication.clipboard().setText(text)
-            print(f"Copied {len(text)} characters to clipboard")
+
+    def select_all(self):
+        if not self.lines:
+            return
+
+        last_line_index = len(self.lines) - 1
+        last_col = len(self._line_text(self.lines[last_line_index]))
+        self.selection_start = (0, 0)
+        self.selection_end = (last_line_index, last_col)
+        self.is_selecting = False
+        self.viewport().update()
 
     def clear(self):
         """Clear the terminal"""

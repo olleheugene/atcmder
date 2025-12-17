@@ -326,6 +326,7 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget = TerminalWidget(font_family=self.font_family, font_size=self.font_size)
         self.terminal_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.terminal_widget.installEventFilter(self)
+        self.terminal_widget.request_paste.connect(self.handle_paste)
         self.clear_btn = QPushButton()
         self.clear_btn.setIcon(QIcon(utils.get_resources(utils.CLEAR_ICON_NAME)))
         self.clear_btn.setFixedSize(28, 28)
@@ -478,6 +479,9 @@ class SerialTerminal(QMainWindow):
                         return True
                     elif key == Qt.Key.Key_V:
                         self.handle_paste()
+                        return True
+                    elif key == Qt.Key.Key_A:
+                        self.terminal_widget.select_all()
                         return True
                 elif modifiers == Qt.KeyboardModifier.AltModifier:
                     # Alt + 1
