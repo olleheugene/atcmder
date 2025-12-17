@@ -1519,14 +1519,15 @@ class SerialTerminal(QMainWindow):
         self.selected_port = port
         # If connected, disconnect and reconnect to new port
         if self.serial and self.serial.is_open:
-            self.serial.close()
-            self.connect_btn.setChecked(False)
-            self.connect_btn.setText("Connect")
-            # Immediately reconnect
+            self.toggle_serial_connection()
             self.toggle_serial_connection()
 
     def on_baudrate_changed(self, baudrate):
         self.baudrate = int(baudrate)
+        # If connected, disconnect and reconnect with new baudrate
+        if self.serial and self.serial.is_open:
+            self.toggle_serial_connection()
+            self.toggle_serial_connection()
 
     def toggle_serial_connection(self):
         if self.serial and self.serial.is_open:

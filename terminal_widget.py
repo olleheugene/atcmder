@@ -1046,3 +1046,17 @@ class TerminalWidget(QAbstractScrollArea):
     def export_text(self):
         """Return terminal contents as a plain-text string."""
         return '\n'.join(self._line_text(line_parts) for line_parts in self.lines)
+
+    def on_port_changed(self, port):
+        self.selected_port = port
+        # If connected, disconnect and reconnect to new port
+        if self.serial and self.serial.is_open:
+            self.toggle_serial_connection()
+            self.toggle_serial_connection()
+
+    def on_baudrate_changed(self, baudrate):
+        self.baudrate = int(baudrate)
+        # If connected, disconnect and reconnect with new baudrate
+        if self.serial and self.serial.is_open:
+            self.toggle_serial_connection()
+            self.toggle_serial_connection()
