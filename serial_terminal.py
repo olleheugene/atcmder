@@ -352,6 +352,7 @@ class SerialTerminal(QMainWindow):
         
         self.right_layout = QVBoxLayout()
         self.top_right_btn_layout = QHBoxLayout()
+        self.top_right_btn_layout.setSpacing(5)
         self.top_right_btn_layout.addStretch()
         self.top_right_btn_layout.addWidget(self.chart_btn)
         self.top_right_btn_layout.addWidget(self.clear_btn)
