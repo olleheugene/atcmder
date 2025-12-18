@@ -2002,6 +2002,15 @@ class SerialTerminal(QMainWindow):
 
                     break
 
+        if filename is None:
+            filename = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
+        
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                yaml.safe_dump(self.full_command_list, f, allow_unicode=True, sort_keys=False)
+        except Exception as e:
+            self.update_status_bar(f"Warning: Could not save to {os.path.basename(filename)}: {str(e)}")
+
     def show_sequence_chart(self):
         if self.sequence_chart_window is None:
             self.sequence_chart_window = SequenceChartWindow(self)
@@ -2012,15 +2021,6 @@ class SerialTerminal(QMainWindow):
     def on_log_data(self, direction, data, timestamp=None):
         if self.sequence_chart_window and self.sequence_chart_window.isVisible():
             self.sequence_chart_window.add_message(direction, data, timestamp)
-        
-        if filename is None:
-            filename = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
-        
-        try:
-            with open(filename, "w", encoding="utf-8") as f:
-                yaml.safe_dump(self.full_command_list, f, allow_unicode=True, sort_keys=False)
-        except Exception as e:
-            self.update_status_bar(f"Warning: Could not save to {os.path.basename(filename)}: {str(e)}")
 
     def load_checkbox_lineedit(self, filename):
         try:
