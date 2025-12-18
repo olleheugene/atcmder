@@ -3,7 +3,7 @@ import yaml
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QGroupBox, QFormLayout, QFontComboBox, QSpinBox, QCheckBox,
-    QPushButton, QComboBox, QLabel, QMessageBox
+    QPushButton, QComboBox, QLabel, QMessageBox, QLineEdit, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QKeySequence 
@@ -194,6 +194,63 @@ class OutputTab(QWidget):
         else:
             settings['terminal']['line_ending'] = 'CR+LF'  # Default
 
+class GeneralTab(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout()
+
+        file_group = QGroupBox("Terminal Log Settings")
+        group_layout = QVBoxLayout()
+
+        self.auto_save_check = QCheckBox("Automatically save terminal output whenever a connection is made")
+        group_layout.addWidget(self.auto_save_check)
+        group_layout.setAlignment(self.auto_save_check, Qt.AlignLeft)
+
+        form_layout = QFormLayout()
+        form_layout.setLabelAlignment(Qt.AlignLeft)
+        form_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+
+        self.save_dir_edit = QLineEdit()
+        self.save_dir_edit.setMinimumWidth(320)
+        self.save_dir_edit.setPlaceholderText("Leave blank to choose a location each time")
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self.browse_save_directory)
+
+        path_widget = QWidget()
+        path_layout = QHBoxLayout(path_widget)
+        path_layout.setContentsMargins(0, 0, 0, 0)
+        path_layout.addWidget(self.save_dir_edit)
+        path_layout.addWidget(browse_btn)
+
+        form_layout.addRow("Default Save Directory:", path_widget)
+        group_layout.addLayout(form_layout)
+
+        info_label = QLabel("When auto-save is enabled, each successful connection dumps the terminal window to this folder.")
+        info_label.setStyleSheet("color: #777; font-size: 11px;")
+        info_label.setWordWrap(True)
+        group_layout.addWidget(info_label)
+
+        file_group.setLayout(group_layout)
+        layout.addWidget(file_group)
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def browse_save_directory(self):
+        initial = self.save_dir_edit.text().strip() or os.path.expanduser("~")
+        directory = QFileDialog.getExistingDirectory(self, "Select Default Save Directory", initial)
+        if directory:
+            self.save_dir_edit.setText(directory)
+
+    def load_settings(self, settings):
+        general = settings.get('general', {})
+        self.save_dir_edit.setText(general.get('save_directory', ''))
+        self.auto_save_check.setChecked(general.get('auto_save_enabled', False))
+
+    def save_settings(self, settings):
+        settings.setdefault('general', {})
+        settings['general']['save_directory'] = self.save_dir_edit.text().strip()
+        settings['general']['auto_save_enabled'] = self.auto_save_check.isChecked()
+
 class WindowsTab(QWidget):
     def __init__(self, parent_dialog=None):
         super().__init__()
@@ -316,10 +373,12 @@ class SettingsDialog(QDialog):
         self.tab_widget = QTabWidget()
         
         # Create tabs
+        self.general_tab = GeneralTab()
         self.output_tab = OutputTab()
         self.windows_tab = WindowsTab(self)  # Pass parent dialog reference
         
         # Add tabs
+        self.tab_widget.addTab(self.general_tab, "General")
         self.tab_widget.addTab(self.output_tab, "Terminal")
         self.tab_widget.addTab(self.windows_tab, "Window")
         
@@ -365,7 +424,8 @@ class SettingsDialog(QDialog):
                 'font': {'name': 'Monaco', 'size': 11, 'bold': False},
                 'theme': 'default',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
-                'terminal': {'line_ending': 'CR+LF'}
+                'terminal': {'line_ending': 'CR+LF'},
+                'general': {'save_directory': '', 'auto_save_enabled': False}
             }
         else:
             try:
@@ -397,6 +457,7 @@ class SettingsDialog(QDialog):
                 settings.setdefault('theme', 'default')
                 settings.setdefault('output_window', {'show_line_numbers': False, 'show_time': False})
                 settings.setdefault('terminal', {'line_ending': 'CR+LF'})
+                settings.setdefault('general', {'save_directory': '', 'auto_save_enabled': False})
                 
             except Exception as e:
                 print(f"Error loading settings: {e}")
@@ -404,10 +465,12 @@ class SettingsDialog(QDialog):
                     'font': {'name': 'Monaco', 'size': 11, 'bold': False},
                     'theme': 'default',
                     'output_window': {'show_line_numbers': False, 'show_time': False},
-                    'terminal': {'line_ending': 'CR+LF'}
+                    'terminal': {'line_ending': 'CR+LF'},
+                    'general': {'save_directory': '', 'auto_save_enabled': False}
                 }
         
         # Load settings into tabs
+        self.general_tab.load_settings(settings)
         self.output_tab.load_settings(settings)
         self.windows_tab.load_settings(settings)
         
@@ -419,6 +482,7 @@ class SettingsDialog(QDialog):
             return
         
         # Update settings from tabs
+        self.general_tab.save_settings(self.settings)
         self.output_tab.save_settings(self.settings)
         self.windows_tab.save_settings(self.settings)
         
@@ -443,6 +507,7 @@ class SettingsDialog(QDialog):
             data['theme'] = self.settings['theme']
             data['output_window'] = self.settings['output_window']
             data['terminal'] = self.settings['terminal']
+            data['general'] = self.settings.get('general', {'save_directory': '', 'auto_save_enabled': False})
             
             if 'command_group_count' in self.settings:
                 data['command_group_count'] = self.settings['command_group_count']
@@ -463,6 +528,7 @@ class SettingsDialog(QDialog):
         """Apply settings immediately to the UI"""
         try:
             # Update settings from tabs first
+            self.general_tab.save_settings(self.settings)
             self.output_tab.save_settings(self.settings)
             self.windows_tab.save_settings(self.settings)
             
