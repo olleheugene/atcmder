@@ -150,7 +150,7 @@ class TerminalWidget(QAbstractScrollArea):
             self.cursor_col = 0
         self.viewport().update()
 
-    def append_text(self, text):
+    def append_text(self, text, timestamp=None):
         """Add text to terminal with optional timestamp"""
         if not text:
             return
@@ -179,10 +179,19 @@ class TerminalWidget(QAbstractScrollArea):
         
         # Get current timestamp
         from datetime import datetime
-        current_time = datetime.now()
-        timestamp_str = current_time.strftime("%H:%M:%S.%f")[:-3]  # HH:MM:SS.mmm format
+        if timestamp:
+            timestamp_str = timestamp
+        else:
+            current_time = datetime.now()
+            timestamp_str = current_time.strftime("%H:%M:%S.%f")[:-3]  # HH:MM:SS.mmm format
         
         for i, line in enumerate(lines):
+            # Update timestamp of the current line if it's empty (only has a timestamp)
+            if i == 0 and self.lines and self.show_timestamps and len(self.lines[-1]) == 1:
+                timestamp_color = QColor(100, 100, 100)  # Gray timestamp
+                timestamp_text = f"{timestamp_str} "
+                self.lines[-1][0] = (timestamp_text, timestamp_color)
+
             if i > 0 or not self.lines:
                 self.lines.append([])
                 

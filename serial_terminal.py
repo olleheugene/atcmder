@@ -5,6 +5,7 @@ import threading
 import time
 import re
 import subprocess
+from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QLineEdit, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QCheckBox, QComboBox, QLabel, QGroupBox, QSizePolicy, QMessageBox, QSplitter, QApplication, QFileDialog, QDialog, QInputDialog
 )
@@ -15,6 +16,7 @@ from terminal_widget import TerminalWidget
 from yaml_editor import YamlEditorDialog
 import yaml
 from settings_dialog import SettingsDialog
+from sequence_chart import SequenceChartWindow
 
 LINEEDIT_MAX_NUMBER = 10
 
@@ -43,9 +45,10 @@ class FindDialog(QDialog):
         self.setLayout(layout)
 
 class SerialTerminal(QMainWindow):
-    serial_data_signal = Signal(str)
+    serial_data_signal = Signal(str, str)
     sequential_complete_signal = Signal(bool, str)
     reconnect_signal = Signal()
+    log_data_signal = Signal(str, str, str)
 
     @staticmethod
     def clear_layout(layout):
@@ -339,9 +342,18 @@ class SerialTerminal(QMainWindow):
         self.save_btn.setFixedSize(28, 28)
         self.save_btn.setIconSize(QSize(20, 20))
         self.save_btn.clicked.connect(self.save_terminal_output)
+        
+        self.chart_btn = QPushButton()
+        self.chart_btn.setIcon(QIcon(utils.get_resources(utils.CHART_ICON_NAME)))
+        self.chart_btn.setFixedSize(28, 28)
+        self.chart_btn.setIconSize(QSize(20, 20))
+        self.chart_btn.setToolTip("Open Sequence Chart")
+        self.chart_btn.clicked.connect(self.show_sequence_chart)
+        
         self.right_layout = QVBoxLayout()
         self.top_right_btn_layout = QHBoxLayout()
         self.top_right_btn_layout.addStretch()
+        self.top_right_btn_layout.addWidget(self.chart_btn)
         self.top_right_btn_layout.addWidget(self.clear_btn)
         self.top_right_btn_layout.addWidget(self.save_btn)
         btn_v_layout = QVBoxLayout()
@@ -379,6 +391,10 @@ class SerialTerminal(QMainWindow):
         self.left_panel_visible = True
         self.serial_data_signal.connect(self.update_terminal)
         self.sequential_complete_signal.connect(self.on_sequential_complete)
+        
+        self.sequence_chart_window = None
+        self.log_data_signal.connect(self.on_log_data)
+        
         # Load settings first
         self.settings = self.load_settings()
         self.apply_initial_settings()
@@ -655,6 +671,9 @@ class SerialTerminal(QMainWindow):
 
         command_to_send = self.current_input_buffer.rstrip() + self.line_ending
         self.serial.write(command_to_send.encode('utf-8', errors='replace'))
+        
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        self.log_data_signal.emit("TX", command_to_send, timestamp)
             
         # Add to command history using utils
         self.command_history = utils.add_to_history(
@@ -811,7 +830,7 @@ class SerialTerminal(QMainWindow):
         # Force update
         self.terminal_widget.viewport().update()
 
-    def update_terminal(self, data):
+    def update_terminal(self, data, timestamp=None):
         """Update terminal with new data"""
         # Apply ANSI spacing processing before displaying
         data = utils.process_ansi_spacing(data)
@@ -820,7 +839,7 @@ class SerialTerminal(QMainWindow):
         auto_scroll_state = self.terminal_widget.auto_scroll
         
         # Append text - content is always added regardless of auto_scroll state
-        self.terminal_widget.append_text(data)
+        self.terminal_widget.append_text(data, timestamp)
 
         # Refresh the screen - repaint() can provide more immediate updates
         self.terminal_widget.update()
@@ -844,6 +863,8 @@ class SerialTerminal(QMainWindow):
     def clear_terminal(self):
         """Clear terminal"""
         self.terminal_widget.clear()
+        if self.sequence_chart_window:
+            self.sequence_chart_window.clear()
 
     def save_terminal_output(self):
         """Save terminal contents to a text file"""
@@ -1949,9 +1970,11 @@ class SerialTerminal(QMainWindow):
                     display_command = f"{command}"
                 
                 bytes_written = self.serial.write(command_bytes)
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                self.log_data_signal.emit("TX", display_command, timestamp)
                 
                 # Display sent command in terminal for verification
-                self.serial_data_signal.emit(f"{display_command}\r\n")
+                self.serial_data_signal.emit(f"{display_command}\r\n", timestamp)
                 
             except Exception as e:
                 # Handle encoding or serial errors
@@ -1978,6 +2001,17 @@ class SerialTerminal(QMainWindow):
                     item['title']['text'] = self.lineedits[i].text()
 
                     break
+
+    def show_sequence_chart(self):
+        if self.sequence_chart_window is None:
+            self.sequence_chart_window = SequenceChartWindow(self)
+        self.sequence_chart_window.show()
+        self.sequence_chart_window.raise_()
+        self.sequence_chart_window.activateWindow()
+
+    def on_log_data(self, direction, data, timestamp=None):
+        if self.sequence_chart_window and self.sequence_chart_window.isVisible():
+            self.sequence_chart_window.add_message(direction, data, timestamp)
         
         if filename is None:
             filename = self.current_cmdlist_file if self.current_cmdlist_file else utils.PREDEFINED_COMMAND_LIST1
@@ -2035,14 +2069,18 @@ class SerialTerminal(QMainWindow):
 
                     # Emit multiple lines at once (performance improvement)
                     if emit_batch:
+                        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                         for chunk in emit_batch:
-                            self.serial_data_signal.emit(chunk)
+                            self.serial_data_signal.emit(chunk, timestamp)
+                            self.log_data_signal.emit("RX", chunk, timestamp)
                         emit_batch.clear()
                 else:
                     # Check for buffer timeout (50ms)
                     if self.ansi_buffer:
                         if buffer_start_time is not None and (time.time() - buffer_start_time > 0.05):
-                            self.serial_data_signal.emit(self.ansi_buffer)
+                            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                            self.serial_data_signal.emit(self.ansi_buffer, timestamp)
+                            self.log_data_signal.emit("RX", self.ansi_buffer, timestamp)
                             self.ansi_buffer = ""
                             buffer_start_time = None
                 time.sleep(0.001)  # Shorter sleep (if CPU is idle)
@@ -2138,8 +2176,10 @@ class SerialTerminal(QMainWindow):
                                 
                                 QTimer.singleShot(0, lambda cmd=command, num=idx+1, total=len(commands_to_send), interval=time_interval, hex_mode=is_hex_mode: update_status(cmd, num, total, interval, hex_mode))
                                 
+                                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                                 # Display sent command in terminal for verification
-                                self.serial_data_signal.emit(f"{display_command}\r\n")
+                                self.serial_data_signal.emit(f"{display_command}\r\n", timestamp)
+                                self.log_data_signal.emit("TX", display_command, timestamp)
                                 
                                 # Add to history using utils (only for ASCII commands)
                                 if not is_hex_mode:
