@@ -1,11 +1,12 @@
-from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy
+from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy, QMenu
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices
-from PySide6.QtCore import Qt, QTimer, QUrl, QRect
+from PySide6.QtCore import Qt, QTimer, QUrl, QRect, Signal
 import re
 
-MAX_TERMINAL_LINES = 9999
+MAX_TERMINAL_LINES = 100000
 
 class TerminalWidget(QAbstractScrollArea):
+    request_paste = Signal()
     def __init__(self, parent=None, font_family="Monaco", font_size=14):
         super().__init__(parent)
         
@@ -100,6 +101,8 @@ class TerminalWidget(QAbstractScrollArea):
         self.show_line_numbers = False
         self.line_number_width = 0
         self.line_number_padding = 10  # Padding between line numbers and text
+        self._line_number_digit_count = 0
+        self._last_line_count = 0
         
         # Timestamp settings
         self.show_timestamps = False
@@ -200,15 +203,22 @@ class TerminalWidget(QAbstractScrollArea):
             self.lines[-1].extend(merged)
         
         if len(self.lines) > MAX_TERMINAL_LINES:
-            del self.lines[:len(self.lines) - MAX_TERMINAL_LINES]
+            overflow = len(self.lines) - MAX_TERMINAL_LINES
+            del self.lines[:overflow]
+            if self.scroll_offset > 0:
+                self.scroll_offset = max(0, self.scroll_offset - overflow)
         
         # Update line number width if line numbers are enabled
         if self.show_line_numbers:
-            # Only update if the number of lines changed significantly to avoid excessive calculations
             lines_count = len(self.lines)
-            if not hasattr(self, '_last_line_count') or abs(lines_count - self._last_line_count) > 10:
+            digit_count = len(str(max(1, lines_count)))
+
+            if digit_count != self._line_number_digit_count:
                 self._update_line_number_width()
-                self._last_line_count = lines_count
+            elif abs(lines_count - self._last_line_count) > 10:
+                self._update_line_number_width()
+
+            self._last_line_count = lines_count
         
         # Update timestamp width if timestamps are enabled
         if self.show_timestamps:
@@ -585,16 +595,15 @@ class TerminalWidget(QAbstractScrollArea):
         """Calculate the width needed for line numbers"""
         if not self.show_line_numbers:
             self.line_number_width = 0
+            self._line_number_digit_count = 0
             return
-        
-        # Calculate width based on maximum line count
-        max_lines = max(len(self.lines), MAX_TERMINAL_LINES)
-        line_count_str = str(max_lines)
-        if len(self.lines) < 1000:
-            self.line_number_width = self.font_metrics.horizontalAdvance(line_count_str) + self.line_number_padding
-        else:
-            # For more than 1000 lines, use a fixed width to avoid excessive width
-            self.line_number_width = self.font_metrics.horizontalAdvance(line_count_str) + self.line_number_padding + 5
+
+        total_lines = max(1, len(self.lines))
+        digit_count = len(str(total_lines))
+        self._line_number_digit_count = digit_count
+
+        sample_digits = '9' * digit_count
+        self.line_number_width = self.font_metrics.horizontalAdvance(sample_digits) + self.line_number_padding + 2
 
     def _update_timestamp_width(self):
         """Calculate the width needed for timestamps"""
@@ -618,6 +627,7 @@ class TerminalWidget(QAbstractScrollArea):
         """Enable or disable line number display"""
         self.show_line_numbers = show
         self._update_line_number_width()
+        self._last_line_count = len(self.lines)
         self.update_scrollbar()
         self.viewport().update()
 
@@ -916,6 +926,8 @@ class TerminalWidget(QAbstractScrollArea):
         self.is_selecting = False
         self.scroll_offset = 0
         self.auto_scroll = True
+        self._line_number_digit_count = 0
+        self._last_line_count = 0
         self.update_scrollbar()
         self.viewport().update()
 

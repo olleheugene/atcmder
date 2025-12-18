@@ -891,7 +891,7 @@ class SerialTerminal(QMainWindow):
         
         # Scrollbar position-based auto-scroll settings
         # Check with some tolerance (even if not exactly at the bottom, if it's close, enable auto-scroll)
-        tolerance = 10  # Increase tolerance (activate auto-scroll over a wider range)
+        tolerance = 1  # Require the scrollbar to be essentially at the bottom before auto-scroll resumes
         max_value = scrollbar.maximum()
         current_value = scrollbar.value()
 
