@@ -412,7 +412,9 @@ class TerminalWidget(QAbstractScrollArea):
 
             for text_part, color in line_parts:
                 if text_part and x < effective_width - 5:
-                    painter.setPen(color)
+                    # Defensive: ensure color is valid for setPen (fallback to default color)
+                    pen_color = color if color is not None else self.default_color
+                    painter.setPen(pen_color)
                     
                     # Calculate text width using fixed character width
                     text_width = len(text_part) * self.char_width
