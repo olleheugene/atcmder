@@ -9,6 +9,7 @@ from PySide6.QtGui import (
 from PySide6.QtCore import Qt, QRectF, QTimer
 from datetime import datetime
 import re
+import os
 
 DISPLAY_TEXT_LEN = 70
 
@@ -30,6 +31,7 @@ class SequenceChartWindow(QMainWindow):
         
         self.chart_widget = SequenceChartWidget()
         self.setCentralWidget(self.chart_widget)
+        self.last_save_dir = os.path.expanduser("~")
 
     def add_message(self, direction, message, timestamp=None):
         self.chart_widget.add_message(direction, message, timestamp)
@@ -48,13 +50,18 @@ class SequenceChartWindow(QMainWindow):
         self.chart_widget.set_hex_mode(checked)
 
     def save_as_pdf(self):
+        if not os.path.exists(self.last_save_dir):
+            self.last_save_dir = os.path.expanduser("~")
+
         timestamp = datetime.now().strftime("%m%d_%H%M%S")
         default_name = f"sequence_chart_{timestamp}.pdf"
+        default_path = os.path.join(self.last_save_dir, default_name)
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save as PDF", default_name, "PDF Files (*.pdf)"
+            self, "Save as PDF", default_path, "PDF Files (*.pdf)"
         )
         if not file_path:
             return
+        self.last_save_dir = os.path.dirname(file_path)
 
         # Save current colors to restore later
         restore_items = []
