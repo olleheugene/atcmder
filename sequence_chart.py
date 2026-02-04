@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt, QRectF, QTimer
 from datetime import datetime
 import re
 
+DISPLAY_TEXT_LEN = 70
+
 class SequenceChartWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -131,9 +133,17 @@ class SequenceChartWidget(QWidget):
         
         # Draw text
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        display_msg = ansi_escape.sub('', message).strip()
+        full_msg = ansi_escape.sub('', message).strip()
+        display_msg = full_msg
+        if len(full_msg) > DISPLAY_TEXT_LEN:
+            display_msg = full_msg[:DISPLAY_TEXT_LEN] + "..."
+
         text_item = self.scene.addText(display_msg)
         text_item.setDefaultTextColor(color)
+        font = text_item.font()
+        font.setPointSize(11)
+        text_item.setFont(font)
+        text_item.setToolTip(full_msg)
 
         fm = QFontMetrics(text_item.font())
         text_width = fm.horizontalAdvance(display_msg)
@@ -149,7 +159,7 @@ class SequenceChartWidget(QWidget):
             'time_left': time_text_left,
             'time_right': time_text_right,
             'color': color,
-            'full_text': display_msg,
+            'full_text': full_msg,
         }
         self.messages.append(msg)
 
@@ -232,16 +242,20 @@ class SequenceChartWidget(QWidget):
             text_item = msg['text_item']
             full_text = msg.get('full_text', text_item.toPlainText())
             
-            if text_item.toPlainText() != full_text:
-                text_item.setPlainText(full_text)
+            display_text = full_text
+            if len(full_text) > DISPLAY_TEXT_LEN:
+                display_text = full_text[:DISPLAY_TEXT_LEN] + "...              "
+            
+            if text_item.toPlainText() != display_text:
+                text_item.setPlainText(display_text)
                 
-            font = text_item.font()
+            font = text_item.font() 
             key = (font.toString())
             if key not in fm_cache:
                 fm_cache[key] = QFontMetrics(font)
             fm = fm_cache[key]
             
-            tw = fm.horizontalAdvance(full_text)
+            tw = fm.horizontalAdvance(display_text)
             center_x = (self.host_x + self.device_x) / 2.0
             text_item.setPos(center_x - tw / 2.0, y - 20)
 
@@ -266,7 +280,11 @@ class SequenceChartWidget(QWidget):
         max_text_w = 0
         default_fm = QFontMetrics(QFont())
         for msg in self.messages:
-            text = msg.get('full_text', '')
+            full_text = msg.get('full_text', '')
+            text = full_text
+            if len(full_text) > DISPLAY_TEXT_LEN:
+                text = full_text[:DISPLAY_TEXT_LEN] + "..."
+
             if 'text_item' in msg:
                 fm = QFontMetrics(msg['text_item'].font())
                 w = fm.horizontalAdvance(text)
