@@ -2023,7 +2023,13 @@ class SerialTerminal(QMainWindow):
     def show_sequence_chart(self):
         if self.sequence_chart_window is None:
             self.sequence_chart_window = SequenceChartWindow(self)
+        
+        self.sequence_chart_window.resize(self.sequence_chart_window.width(), self.height())
         self.sequence_chart_window.show()
+        
+        geo = self.frameGeometry()
+        self.sequence_chart_window.move(geo.x() + geo.width(), self.y())
+        
         self.sequence_chart_window.raise_()
         self.sequence_chart_window.activateWindow()
 
