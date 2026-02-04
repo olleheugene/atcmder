@@ -23,6 +23,11 @@ class SequenceChartWindow(QMainWindow):
         save_btn.clicked.connect(self.save_as_pdf)
         toolbar.addWidget(save_btn)
         
+        self.hex_btn = QPushButton("HEX")
+        self.hex_btn.setCheckable(True)
+        self.hex_btn.clicked.connect(self.toggle_hex_mode)
+        toolbar.addWidget(self.hex_btn)
+        
         self.chart_widget = SequenceChartWidget()
         self.setCentralWidget(self.chart_widget)
 
@@ -38,6 +43,9 @@ class SequenceChartWindow(QMainWindow):
             QTimer.singleShot(0, self.chart_widget.initial_layout)
         except Exception:
             pass
+
+    def toggle_hex_mode(self, checked):
+        self.chart_widget.set_hex_mode(checked)
 
     def save_as_pdf(self):
         timestamp = datetime.now().strftime("%m%d_%H%M%S")
@@ -152,6 +160,7 @@ class SequenceChartWidget(QWidget):
         self.device_line = None
 
         self.messages = []
+        self.hex_mode = False
 
         self.setup_chart()
         self.recalculate_layout()
@@ -160,6 +169,13 @@ class SequenceChartWidget(QWidget):
             self.view.verticalScrollBar().valueChanged.connect(self._on_vscroll)
         except Exception:
             pass
+            
+    def set_hex_mode(self, enabled):
+        self.hex_mode = enabled
+        self.recalculate_layout()
+
+    def _to_hex(self, text):
+        return ' '.join(f"{ord(c):02X}" for c in text)
         
     def setup_chart(self):
         # Draw initial vertical lines
@@ -239,16 +255,21 @@ class SequenceChartWidget(QWidget):
         # Draw text
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         full_msg = ansi_escape.sub('', message).strip()
-        display_msg = full_msg
-        if len(full_msg) > DISPLAY_TEXT_LEN:
-            display_msg = full_msg[:DISPLAY_TEXT_LEN] + "..."
+        
+        target_text = full_msg
+        if self.hex_mode:
+            target_text = self._to_hex(full_msg)
+
+        display_msg = target_text
+        if len(target_text) > DISPLAY_TEXT_LEN:
+            display_msg = target_text[:DISPLAY_TEXT_LEN] + "..."
 
         text_item = self.scene.addText(display_msg)
         text_item.setDefaultTextColor(color)
         font = text_item.font()
         font.setPointSize(11)
         text_item.setFont(font)
-        text_item.setToolTip(full_msg)
+        text_item.setToolTip(target_text)
 
         fm = QFontMetrics(text_item.font())
         text_width = fm.horizontalAdvance(display_msg)
@@ -347,12 +368,17 @@ class SequenceChartWidget(QWidget):
             text_item = msg['text_item']
             full_text = msg.get('full_text', text_item.toPlainText())
             
-            display_text = full_text
-            if len(full_text) > DISPLAY_TEXT_LEN:
-                display_text = full_text[:DISPLAY_TEXT_LEN] + "...              "
+            target_text = full_text
+            if self.hex_mode:
+                target_text = self._to_hex(full_text)
+            
+            display_text = target_text
+            if len(target_text) > DISPLAY_TEXT_LEN:
+                display_text = target_text[:DISPLAY_TEXT_LEN] + "...              "
             
             if text_item.toPlainText() != display_text:
                 text_item.setPlainText(display_text)
+                text_item.setToolTip(target_text)
                 
             font = text_item.font() 
             key = (font.toString())
@@ -386,9 +412,14 @@ class SequenceChartWidget(QWidget):
         default_fm = QFontMetrics(QFont())
         for msg in self.messages:
             full_text = msg.get('full_text', '')
-            text = full_text
-            if len(full_text) > DISPLAY_TEXT_LEN:
-                text = full_text[:DISPLAY_TEXT_LEN] + "..."
+            
+            target_text = full_text
+            if self.hex_mode:
+                target_text = self._to_hex(full_text)
+            
+            text = target_text
+            if len(target_text) > DISPLAY_TEXT_LEN:
+                text = target_text[:DISPLAY_TEXT_LEN] + "..."
 
             if 'text_item' in msg:
                 fm = QFontMetrics(msg['text_item'].font())
