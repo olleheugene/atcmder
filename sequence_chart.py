@@ -2,6 +2,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QGraphicsView, QGraphicsScen
 from PySide6.QtGui import QPen, QColor, QPainter, QPainterPath, QFont, QFontMetrics
 from PySide6.QtCore import Qt, QRectF, QTimer
 from datetime import datetime
+import re
 
 class SequenceChartWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -129,7 +130,8 @@ class SequenceChartWidget(QWidget):
         arrow_item = self.scene.addPath(arrow_path, pen, color)
         
         # Draw text
-        display_msg = message.strip()
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        display_msg = ansi_escape.sub('', message).strip()
         text_item = self.scene.addText(display_msg)
         text_item.setDefaultTextColor(color)
 
