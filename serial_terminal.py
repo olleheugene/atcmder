@@ -2647,8 +2647,16 @@ class SerialTerminal(QMainWindow):
 
     def _run_external_command_thread(self, cmd):
         try:
+            final_cmd = cmd
+            if sys.platform == "darwin":
+                cmd_escaped = cmd.replace("'", "'\\''")
+                final_cmd = f"zsh -c 'source ~/.zshrc; {cmd_escaped}'"
+            elif sys.platform == "linux":
+                cmd_escaped = cmd.replace("'", "'\\''")
+                final_cmd = f"bash -c 'source ~/.bashrc; {cmd_escaped}'"
+
             process = subprocess.Popen(
-                cmd, 
+                final_cmd, 
                 shell=True, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
