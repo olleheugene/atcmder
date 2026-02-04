@@ -9,6 +9,7 @@ from pathlib import Path
 APP_ICON_NAME               = "app_icon.png"
 CLEAR_ICON_NAME             = "clear.png"
 SAVE_ICON_NAME              = "save.png"
+EXTERNAL_CMD_ICON_NAME      = "terminal.png"
 CHART_ICON_NAME             = "bidirection.png"
 LEFT_ARROW_ICON_NAME        = "left-3arrow.png"
 RIGHT_ARROW_ICON_NAME       = "right-3arrow.png"

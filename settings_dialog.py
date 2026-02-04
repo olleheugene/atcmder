@@ -232,6 +232,18 @@ class GeneralTab(QWidget):
 
         file_group.setLayout(group_layout)
         layout.addWidget(file_group)
+
+        # External Shell Command settings
+        cmd_group = QGroupBox("External Shell Command")
+        cmd_layout = QVBoxLayout()
+        
+        self.ext_cmd_edit = QLineEdit()
+        self.ext_cmd_edit.setPlaceholderText("Enter shell command here...")
+        cmd_layout.addWidget(self.ext_cmd_edit)
+        
+        cmd_group.setLayout(cmd_layout)
+        layout.addWidget(cmd_group)
+
         layout.addStretch()
         self.setLayout(layout)
 
@@ -245,11 +257,13 @@ class GeneralTab(QWidget):
         general = settings.get('general', {})
         self.save_dir_edit.setText(general.get('save_directory', ''))
         self.auto_save_check.setChecked(general.get('auto_save_enabled', False))
+        self.ext_cmd_edit.setText(general.get('external_command', ''))
 
     def save_settings(self, settings):
         settings.setdefault('general', {})
         settings['general']['save_directory'] = self.save_dir_edit.text().strip()
         settings['general']['auto_save_enabled'] = self.auto_save_check.isChecked()
+        settings['general']['external_command'] = self.ext_cmd_edit.text().strip()
 
 class WindowsTab(QWidget):
     def __init__(self, parent_dialog=None):

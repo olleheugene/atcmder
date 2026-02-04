@@ -350,10 +350,18 @@ class SerialTerminal(QMainWindow):
         self.chart_btn.setToolTip("Open Sequence Chart")
         self.chart_btn.clicked.connect(self.show_sequence_chart)
         
+        self.ext_cmd_btn = QPushButton()
+        self.ext_cmd_btn.setIcon(QIcon(utils.get_resources(utils.EXTERNAL_CMD_ICON_NAME)))
+        self.ext_cmd_btn.setFixedSize(28, 28)
+        self.ext_cmd_btn.setIconSize(QSize(20, 20))
+        self.ext_cmd_btn.setToolTip("Run External Shell Command")
+        self.ext_cmd_btn.clicked.connect(self.execute_external_command)
+        
         self.right_layout = QVBoxLayout()
         self.top_right_btn_layout = QHBoxLayout()
         self.top_right_btn_layout.setSpacing(5)
         self.top_right_btn_layout.addStretch()
+        self.top_right_btn_layout.addWidget(self.ext_cmd_btn)
         self.top_right_btn_layout.addWidget(self.chart_btn)
         self.top_right_btn_layout.addWidget(self.clear_btn)
         self.top_right_btn_layout.addWidget(self.save_btn)
@@ -2618,3 +2626,45 @@ class SerialTerminal(QMainWindow):
             yaml.safe_dump(empty_commands, f, allow_unicode=True, sort_keys=False)
         
         print(f"Created empty command file: {file_path}")
+
+    def execute_external_command(self):
+        cmd = self.settings.get('general', {}).get('external_command', '').strip()
+        if not cmd:
+            self.update_status_bar("No external command configured.")
+            QMessageBox.information(self, "External Command", "No external command configured.\nPlease set it in Settings -> General.")
+            return
+
+        self.update_status_bar(f"Executing: {cmd}")
+        self.terminal_widget.append_text(f"\n\x1b[36m> Executing:\n{cmd}\x1b[0m\n")
+        
+        threading.Thread(target=self._run_external_command_thread, args=(cmd,), daemon=True).start()
+
+    def _run_external_command_thread(self, cmd):
+        try:
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            stdout, stderr = process.communicate()
+            
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            
+            output = ""
+            if stdout:
+                output += f"\x1b[36m{stdout}\x1b[0m"
+            if stderr:
+                output += f"\n\x1b[31m{stderr}\x1b[0m"
+            
+            if output:
+                if not output.endswith('\n'):
+                    output += '\n'
+                self.serial_data_signal.emit(output, timestamp)
+            # else:
+            #     self.serial_data_signal.emit(f"\x1b[36m[Command finished with no output]\x1b[0m\n", timestamp)
+                
+        except Exception as e:
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            self.serial_data_signal.emit(f"\x1b[31mError executing command: {e}\x1b[0m\n", timestamp)
