@@ -4,9 +4,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QPen, QColor, QPainter, QPainterPath, QFont, QFontMetrics, QAction, 
-    QPdfWriter, QPageSize
+    QPdfWriter, QPageSize, QPalette
 )
-from PySide6.QtCore import Qt, QRectF, QTimer
+from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 from datetime import datetime
 import re
 import os
@@ -185,16 +185,23 @@ class SequenceChartWidget(QWidget):
         return ' '.join(f"{ord(c):02X}" for c in text)
         
     def setup_chart(self):
+        # Determine colors based on background brightness
+        bg_color = self.view.palette().color(QPalette.Base)
+        is_light_bg = bg_color.lightness() > 128
+        line_color = QColor(60, 60, 60) if is_light_bg else Qt.white
+
         # Draw initial vertical lines
-        pen = QPen(Qt.black)
+        pen = QPen(line_color)
         pen.setWidth(2)
         
         # Host Line
         self.host_line = self.scene.addLine(self.host_x, 20, self.host_x, 1000, pen)
         self.host_label = self.scene.addText("Host (PC)")
+        self.host_label.setDefaultTextColor(line_color)
         self.host_label.setPos(self.host_x - self.host_label.boundingRect().width() / 2, 0)
         self.device_line = self.scene.addLine(self.device_x, 20, self.device_x, 1000, pen)
         self.device_label = self.scene.addText("Device")
+        self.device_label.setDefaultTextColor(line_color)
         self.device_label.setPos(self.device_x - self.device_label.boundingRect().width() / 2, 0)
         self.scene.setSceneRect(0, 0, 800, 1100)
         
@@ -229,14 +236,18 @@ class SequenceChartWidget(QWidget):
         pen = QPen(Qt.black)
         pen.setWidth(1)
         
+        # Determine colors based on background brightness
+        bg_color = self.view.palette().color(QPalette.Base)
+        is_light_bg = bg_color.lightness() > 128
+
         if direction == "TX": # Host -> Device
             start_x = self.host_x
             end_x = self.device_x
-            color = QColor("lightgreen")
+            color = QColor("darkgreen") if is_light_bg else QColor("lightgreen")
         else: # Device -> Host
             start_x = self.device_x
             end_x = self.host_x
-            color = QColor("white")
+            color = Qt.black if is_light_bg else QColor("white")
             
         pen.setColor(color)
         
@@ -459,3 +470,52 @@ class SequenceChartWidget(QWidget):
                 self.auto_scroll = False
         except Exception:
             self.auto_scroll = False
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.PaletteChange or event.type() == QEvent.StyleChange:
+            self.update_colors()
+        super().changeEvent(event)
+
+    def update_colors(self):
+        bg_color = self.view.palette().color(QPalette.Base)
+        is_light_bg = bg_color.lightness() > 128
+        
+        line_color = QColor(60, 60, 60) if is_light_bg else Qt.white
+        
+        # Update vertical lines
+        if self.host_line:
+            pen = self.host_line.pen()
+            pen.setColor(line_color)
+            self.host_line.setPen(pen)
+        if self.device_line:
+            pen = self.device_line.pen()
+            pen.setColor(line_color)
+            self.device_line.setPen(pen)
+            
+        if hasattr(self, 'host_label') and self.host_label:
+            self.host_label.setDefaultTextColor(line_color)
+        if hasattr(self, 'device_label') and self.device_label:
+            self.device_label.setDefaultTextColor(line_color)
+        
+        for msg in self.messages:
+            direction = msg['direction']
+            if direction == "TX":
+                new_color = QColor("darkgreen") if is_light_bg else QColor("lightgreen")
+            else:
+                new_color = Qt.black if is_light_bg else QColor("white")
+            
+            msg['color'] = new_color
+            
+            # Update Line
+            pen = msg['line_item'].pen()
+            pen.setColor(new_color)
+            msg['line_item'].setPen(pen)
+            
+            # Update Arrow
+            pen = msg['arrow_item'].pen()
+            pen.setColor(new_color)
+            msg['arrow_item'].setPen(pen)
+            msg['arrow_item'].setBrush(new_color)
+            
+            # Update Text
+            msg['text_item'].setDefaultTextColor(new_color)
