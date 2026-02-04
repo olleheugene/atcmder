@@ -325,12 +325,11 @@ class SequenceChartWidget(QWidget):
 
     def clear(self):
         self.scene.clear()
+        self.messages = []
         self.current_y = 50
         self.setup_chart()
         self.scene.setSceneRect(0, 0, 500, 1000)
         self.view.verticalScrollBar().setValue(0)
-        self.current_y = 50
-        self.setup_chart()
 
     def update_positions(self):
         """Update positions of all items based on current host_x and device_x."""
