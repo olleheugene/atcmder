@@ -1,5 +1,11 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsLineItem, QGraphicsTextItem, QGraphicsPathItem, QMainWindow
-from PySide6.QtGui import QPen, QColor, QPainter, QPainterPath, QFont, QFontMetrics
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsLineItem, 
+    QGraphicsTextItem, QGraphicsPathItem, QMainWindow, QFileDialog, QMessageBox, QPushButton
+)
+from PySide6.QtGui import (
+    QPen, QColor, QPainter, QPainterPath, QFont, QFontMetrics, QAction, 
+    QPdfWriter, QPageSize
+)
 from PySide6.QtCore import Qt, QRectF, QTimer
 from datetime import datetime
 import re
@@ -10,7 +16,13 @@ class SequenceChartWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Sequence Chart")
-        self.resize(600, 800)
+        self.resize(700, 800)
+        
+        toolbar = self.addToolBar("Main")
+        save_btn = QPushButton("Save as PDF")
+        save_btn.clicked.connect(self.save_as_pdf)
+        toolbar.addWidget(save_btn)
+        
         self.chart_widget = SequenceChartWidget()
         self.setCentralWidget(self.chart_widget)
 
@@ -26,6 +38,99 @@ class SequenceChartWindow(QMainWindow):
             QTimer.singleShot(0, self.chart_widget.initial_layout)
         except Exception:
             pass
+
+    def save_as_pdf(self):
+        timestamp = datetime.now().strftime("%m%d_%H%M%S")
+        default_name = f"sequence_chart_{timestamp}.pdf"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save as PDF", default_name, "PDF Files (*.pdf)"
+        )
+        if not file_path:
+            return
+
+        # Save current colors to restore later
+        restore_items = []
+        for msg in self.chart_widget.messages:
+            # Text
+            text_item = msg['text_item']
+            old_text_color = text_item.defaultTextColor()
+            text_item.setDefaultTextColor(Qt.black)
+            
+            # Line
+            line_item = msg['line_item']
+            old_line_pen = line_item.pen()
+            new_line_pen = QPen(Qt.black)
+            new_line_pen.setWidth(old_line_pen.width())
+            line_item.setPen(new_line_pen)
+
+            # Arrow
+            arrow_item = msg['arrow_item']
+            old_arrow_pen = arrow_item.pen()
+            old_arrow_brush = arrow_item.brush()
+            
+            new_arrow_pen = QPen(Qt.black)
+            new_arrow_pen.setWidth(old_arrow_pen.width())
+            arrow_item.setPen(new_arrow_pen)
+            arrow_item.setBrush(Qt.black)
+            
+            restore_items.append({
+                'text_item': text_item,
+                'old_text_color': old_text_color,
+                'line_item': line_item,
+                'old_line_pen': old_line_pen,
+                'arrow_item': arrow_item,
+                'old_arrow_pen': old_arrow_pen,
+                'old_arrow_brush': old_arrow_brush,
+            })
+
+        try:
+            writer = QPdfWriter(file_path)
+            writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+            writer.setResolution(300)
+            writer.setCreator("AT Commander")
+            writer.setTitle("Sequence Chart")
+            
+            painter = QPainter(writer)
+            
+            scene = self.chart_widget.scene
+            scene_rect = scene.sceneRect()
+            
+            layout = writer.pageLayout()
+            page_rect = layout.paintRectPixels(writer.resolution())
+            
+            margin = 20
+            available_width = page_rect.width() - 2 * margin
+            available_height = page_rect.height() - 2 * margin
+            
+            scale = available_width / scene_rect.width()
+            scene_page_height = available_height / scale
+            
+            y_pos = 0
+            while y_pos < scene_rect.height():
+                if y_pos > 0:
+                    writer.newPage()
+                
+                source_rect = QRectF(
+                    scene_rect.x(), scene_rect.y() + y_pos, 
+                    scene_rect.width(), min(scene_page_height, scene_rect.height() - y_pos)
+                )
+                target_height = source_rect.height() * scale
+                target_rect = QRectF(margin, margin, available_width, target_height)
+                
+                scene.render(painter, target_rect, source_rect)
+                y_pos += scene_page_height
+                
+            painter.end()
+            QMessageBox.information(self, "Success", f"Saved to {file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save PDF: {e}")
+        finally:
+            # Restore colors
+            for item in restore_items:
+                item['text_item'].setDefaultTextColor(item['old_text_color'])
+                item['line_item'].setPen(item['old_line_pen'])
+                item['arrow_item'].setPen(item['old_arrow_pen'])
+                item['arrow_item'].setBrush(item['old_arrow_brush'])
 
 class SequenceChartWidget(QWidget):
     def __init__(self, parent=None):
@@ -90,13 +195,13 @@ class SequenceChartWidget(QWidget):
         font = time_text_left.font()
         font.setPointSize(8)
         time_text_left.setFont(font)
-        time_text_left.setPos(self.host_x - 85, self.current_y - 10)
+        time_text_left.setPos(self.host_x - 75, self.current_y - 10)
         
         # Time on right of Device
         time_text_right = self.scene.addText(current_time)
         time_text_right.setDefaultTextColor(Qt.gray)
         time_text_right.setFont(font)
-        time_text_right.setPos(self.device_x + 10, self.current_y - 10)
+        time_text_right.setPos(self.device_x + 5, self.current_y - 10)
 
         pen = QPen(Qt.black)
         pen.setWidth(1)
@@ -235,9 +340,9 @@ class SequenceChartWidget(QWidget):
             msg['arrow_item'].setPath(arrow_path)
             # Update timestamps
             if msg.get('time_left'):
-                msg['time_left'].setPos(self.host_x - 85, y - 10)
+                msg['time_left'].setPos(self.host_x - 75, y - 10)
             if msg.get('time_right'):
-                msg['time_right'].setPos(self.device_x + 10, y - 10)
+                msg['time_right'].setPos(self.device_x + 5, y - 10)
             # Update text position and elide if needed
             text_item = msg['text_item']
             full_text = msg.get('full_text', text_item.toPlainText())
