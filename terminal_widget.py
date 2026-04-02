@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QAbstractScrollArea, QSizePolicy, QMenu
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPalette, QGuiApplication, QDesktopServices
 from PySide6.QtCore import Qt, QTimer, QUrl, QRect, Signal
 import re
-
+import unicodedata
 MAX_TERMINAL_LINES = 100000
 
 class TerminalWidget(QAbstractScrollArea):
@@ -42,7 +42,7 @@ class TerminalWidget(QAbstractScrollArea):
         
         self.font_metrics = QFontMetrics(self.font)
         self.line_height = self.font_metrics.height()
-        # Use consistent character width for monospace font
+        # Use consistent character width for monospace font (for Latin characters)
         self.char_width = self.font_metrics.horizontalAdvance('M')
         self.lines = []
         self.scroll_offset = 0
@@ -416,29 +416,33 @@ class TerminalWidget(QAbstractScrollArea):
                     pen_color = color if color is not None else self.default_color
                     painter.setPen(pen_color)
                     
-                    # Calculate text width using fixed character width
-                    text_width = len(text_part) * self.char_width
-                    
-                    # Check if we need to truncate
-                    if x + text_width > effective_width - 5:
-                        available_width = effective_width - 5 - x
-                        if available_width > 0:
-                            chars_that_fit = max(0, int(available_width / self.char_width))
-                            if chars_that_fit > 0:
-                                # Draw truncated text character by character
-                                for i in range(chars_that_fit):
-                                    char_x = x + i * self.char_width
-                                    painter.drawText(char_x, y_line, text_part[i])
-                        break
-                    else:
+                    # Draw text character by character, calculating actual width for each
+                    current_x_for_part = x
+                    for char in text_part:
+                        # Get the actual width of the character
+                        char_display_width = self.font_metrics.horizontalAdvance(char)
+                        
+                        # Check if the character is a CJK character (typically double-width)
+                        # This is a heuristic; a more robust solution might involve font-specific metrics
+                        # or a more comprehensive CJK character range check.
+                        # For now, we'll assume CJK characters are wider than 'M' and adjust.
+                        if unicodedata.east_asian_width(char) in ('W', 'F', 'A'): # Wide, Fullwidth, Ambiguous
+                            # If the font is truly monospace for CJK, char_display_width will be ~2*self.char_width
+                            # If not, we still use its actual width.
+                            pass # Use actual width
+                        else:
+                            # For non-CJK, use the assumed monospace width for consistency if it's close
+                            # This helps align ASCII characters better in a mixed environment
+                            if abs(char_display_width - self.char_width) < 2: # Small tolerance
+                                char_display_width = self.char_width
+
                         # Only draw if text is in visible area
-                        if x + text_width > text_start_x:
-                            # Draw text character by character at fixed positions
-                            for i, char in enumerate(text_part):
-                                char_x = x + i * self.char_width
-                                if char_x >= text_start_x and char_x < effective_width - 5:
-                                    painter.drawText(char_x, y_line, char)
-                        x += text_width
+                        if current_x_for_part >= text_start_x and current_x_for_part < effective_width - 5:
+                            painter.drawText(current_x_for_part, y_line, char)
+                        
+                        current_x_for_part += char_display_width
+
+                    x = current_x_for_part # Update x for the next text_part
 
             # Draw URL underline after text so it stays visible
             if line_url_matches:
@@ -461,14 +465,24 @@ class TerminalWidget(QAbstractScrollArea):
                 # Calculate cursor position based on actual text rendering
                 if line_idx < len(self.lines):
                     line_text = self._line_text(self.lines[line_idx])
-                    if self.cursor_col <= len(line_text):
-                        # Calculate actual text width up to cursor position
-                        text_before_cursor = line_text[:self.cursor_col]
-                        cursor_x = text_start_x + 5 - h_scroll_offset + len(text_before_cursor) * self.char_width
-                    else:
-                        cursor_x = text_start_x + 5 - h_scroll_offset + len(line_text) * self.char_width
+                    
+                    calculated_cursor_x_offset = 0
+                    for i, char in enumerate(line_text):
+                        if i >= self.cursor_col:
+                            break
+                        char_display_width = self.font_metrics.horizontalAdvance(char)
+                        if unicodedata.east_asian_width(char) not in ('W', 'F', 'A') and abs(char_display_width - self.char_width) < 2:
+                            char_display_width = self.char_width
+                        calculated_cursor_x_offset += char_display_width
+
+                    cursor_x = text_start_x + 5 - h_scroll_offset + calculated_cursor_x_offset
+
                 else:
                     cursor_x = text_start_x + 5 - h_scroll_offset
+
+                # Ensure cursor is within bounds of the line's actual rendered width
+                if self.cursor_col == len(line_text):
+                    cursor_x = text_start_x + 5 - h_scroll_offset + self.font_metrics.horizontalAdvance(line_text)
                     
                 if cursor_x >= text_start_x and cursor_x < effective_width - 5:
                     painter.setPen(QColor(200, 255, 200))
@@ -484,9 +498,6 @@ class TerminalWidget(QAbstractScrollArea):
 
     def _line_text(self, line_parts):
         return ''.join(part for part, _ in line_parts)
-
-    def _line_length(self, line_parts):
-        return len(self._line_text(line_parts))
 
     def _line_length(self, line_parts):
         return len(self._line_text(line_parts))
@@ -583,8 +594,15 @@ class TerminalWidget(QAbstractScrollArea):
         if self.lines:
             for line_parts in self.lines:
                 line_text = self._line_text(line_parts)
-                # Use fixed character width for consistent calculation
-                line_width = len(line_text) * self.char_width
+                
+                # Calculate actual pixel width of the line
+                line_width = 0
+                for char in line_text:
+                    char_display_width = self.font_metrics.horizontalAdvance(char)
+                    if unicodedata.east_asian_width(char) not in ('W', 'F', 'A') and abs(char_display_width - self.char_width) < 2:
+                        char_display_width = self.char_width
+                    line_width += char_display_width
+
                 max_line_width = max(max_line_width, line_width)
         content_text_width = max_line_width + (self.char_width * 2) + 10
         
