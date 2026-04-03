@@ -102,7 +102,7 @@ class SequenceChartWindow(QMainWindow):
             writer = QPdfWriter(file_path)
             writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
             writer.setResolution(300)
-            writer.setCreator("AT Commander")
+            writer.setCreator("Sequence Chart")
             writer.setTitle("Sequence Chart")
             
             painter = QPainter(writer)
@@ -195,20 +195,20 @@ class SequenceChartWidget(QWidget):
         pen.setWidth(2)
         
         # Host Line
-        self.host_line = self.scene.addLine(self.host_x, 20, self.host_x, 1000, pen)
+        self.host_line = self.scene.addLine(self.host_x, 20, self.host_x, 100, pen)
         self.host_label = self.scene.addText("Host (PC)")
         self.host_label.setDefaultTextColor(line_color)
         self.host_label.setPos(self.host_x - self.host_label.boundingRect().width() / 2, 0)
-        self.device_line = self.scene.addLine(self.device_x, 20, self.device_x, 1000, pen)
+        self.device_line = self.scene.addLine(self.device_x, 20, self.device_x, 100, pen)
         self.device_label = self.scene.addText("Device")
         self.device_label.setDefaultTextColor(line_color)
         self.device_label.setPos(self.device_x - self.device_label.boundingRect().width() / 2, 0)
-        self.scene.setSceneRect(0, 0, 800, 1100)
+        self.scene.setSceneRect(0, 0, 800, 150)
         
     def add_message(self, direction, message, timestamp=None):
         # Extend vertical lines if needed
         if self.current_y > self.host_line.line().y2() - 50:
-            new_y2 = self.current_y + 500
+            new_y2 = self.current_y + 50
             self.host_line.setLine(self.host_x, 20, self.host_x, new_y2)
             self.device_line.setLine(self.device_x, 20, self.device_x, new_y2)
             self.scene.setSceneRect(0, 0, self.scene.sceneRect().width(), new_y2 + 50)
@@ -328,7 +328,7 @@ class SequenceChartWidget(QWidget):
         self.messages = []
         self.current_y = 50
         self.setup_chart()
-        self.scene.setSceneRect(0, 0, 500, 1000)
+        self.scene.setSceneRect(0, 0, 500, 150)
         self.view.verticalScrollBar().setValue(0)
 
     def update_positions(self):
@@ -343,7 +343,7 @@ class SequenceChartWidget(QWidget):
         if hasattr(self, 'device_label') and self.device_label:
             self.device_label.setPos(self.device_x - self.device_label.boundingRect().width() / 2, 0)
 
-        self.scene.setSceneRect(0, 0, max(self.view.viewport().width(), self.device_x + 200), max(1100, host_y2 + 50))
+        self.scene.setSceneRect(0, 0, max(self.view.viewport().width(), self.device_x + 200), host_y2 + 50)
 
         self._update_message_positions()
 
