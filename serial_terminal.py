@@ -1444,8 +1444,16 @@ class SerialTerminal(QMainWindow):
         commands_for_page = self.full_command_list[start_index_in_list:end_index_in_list]
 
         for i in range(LINEEDIT_MAX_NUMBER):
-            self.checkboxes[i].stateChanged.disconnect()
-            self.lineedits[i].textChanged.disconnect()
+            try:
+                while self.checkboxes[i].receivers(self.checkboxes[i].stateChanged) > 0:
+                    self.checkboxes[i].stateChanged.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            try:
+                while self.lineedits[i].receivers(self.lineedits[i].textChanged) > 0:
+                    self.lineedits[i].textChanged.disconnect()
+            except (RuntimeError, TypeError):
+                pass
             self.checkboxes[i].setVisible(False)
             self.lineedits[i].setVisible(False)
             self.sendline_btns[i].setVisible(False)
@@ -1479,8 +1487,16 @@ class SerialTerminal(QMainWindow):
         for item in commands_for_page:
             original_index = item["index"]
             ui_index = original_index % LINEEDIT_MAX_NUMBER
-            self.checkboxes[ui_index].stateChanged.disconnect()
-            self.lineedits[ui_index].textChanged.disconnect()
+            try:
+                while self.checkboxes[ui_index].receivers(self.checkboxes[ui_index].stateChanged) > 0:
+                    self.checkboxes[ui_index].stateChanged.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            try:
+                while self.lineedits[ui_index].receivers(self.lineedits[ui_index].textChanged) > 0:
+                    self.lineedits[ui_index].textChanged.disconnect()
+            except (RuntimeError, TypeError):
+                pass
 
             self.checkboxes[ui_index].setVisible(True)
             self.lineedits[ui_index].setVisible(True)
