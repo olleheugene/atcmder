@@ -13,6 +13,92 @@ SETTINGS_PATH = os.path.join(
     os.path.dirname(__file__), "resources", "atcmder_settings.yaml"
 )
 
+class SerialTab(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout()
+
+        serial_group = QGroupBox("Default Serial Port Settings")
+        form_layout = QFormLayout()
+
+        # Port
+        self.port_combo = QComboBox()
+        self.port_combo.setToolTip("Select the default serial port.")
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_ports)
+        port_layout = QHBoxLayout()
+        port_layout.addWidget(self.port_combo)
+        port_layout.addWidget(refresh_btn)
+        form_layout.addRow("Port:", port_layout)
+
+        # Baudrate
+        self.baudrate_combo = QComboBox()
+        baudrates = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000"]
+        self.baudrate_combo.addItems(baudrates)
+        self.baudrate_combo.setEditable(True)
+        self.baudrate_combo.setToolTip("Select or enter the default baud rate.")
+        form_layout.addRow("Baudrate:", self.baudrate_combo)
+
+        # Parity
+        self.parity_combo = QComboBox()
+        self.parity_combo.addItems(["None", "Even", "Odd", "Mark", "Space"])
+        self.parity_combo.setToolTip("Select the parity bit setting.")
+        form_layout.addRow("Parity:", self.parity_combo)
+
+        # Flow Control
+        self.flow_control_combo = QComboBox()
+        self.flow_control_combo.addItems(["None", "RTS/CTS (Hardware)", "XON/XOFF (Software)"])
+        self.flow_control_combo.setToolTip("Select the flow control method.")
+        form_layout.addRow("Flow Control:", self.flow_control_combo)
+
+        serial_group.setLayout(form_layout)
+        layout.addWidget(serial_group)
+        layout.addStretch()
+        self.setLayout(layout)
+
+        self.refresh_ports()
+
+    def refresh_ports(self):
+        current_port = self.port_combo.currentText()
+        self.port_combo.clear()
+        ports = utils.list_serial_ports()
+        self.port_combo.addItems(ports)
+        if current_port in ports:
+            self.port_combo.setCurrentText(current_port)
+
+    def load_settings(self, settings):
+        serial_settings = settings.get('serial', {})
+        self.refresh_ports()
+        port = serial_settings.get('port', '')
+        if port and self.port_combo.findText(port) != -1:
+            self.port_combo.setCurrentText(port)
+        elif self.port_combo.count() > 0:
+            self.port_combo.setCurrentIndex(0)
+        self.baudrate_combo.setCurrentText(str(serial_settings.get('baudrate', 115200)))
+        
+        parity = serial_settings.get('parity', 'None')
+        p_index = self.parity_combo.findText(parity)
+        if p_index != -1:
+            self.parity_combo.setCurrentIndex(p_index)
+
+        flow_control = serial_settings.get('flow_control', 'None')
+        if flow_control == "RTS/CTS (Hardware)":
+            self.flow_control_combo.setCurrentIndex(1)
+        elif flow_control == "XON/XOFF (Software)":
+            self.flow_control_combo.setCurrentIndex(2)
+        else:
+            self.flow_control_combo.setCurrentIndex(0)
+
+    def save_settings(self, settings):
+        settings.setdefault('serial', {})
+        settings['serial']['port'] = self.port_combo.currentText()
+        try:
+            settings['serial']['baudrate'] = int(self.baudrate_combo.currentText())
+        except ValueError:
+            settings['serial']['baudrate'] = 115200
+        settings['serial']['parity'] = self.parity_combo.currentText()
+        settings['serial']['flow_control'] = self.flow_control_combo.currentText()
+
 class OutputTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -387,11 +473,13 @@ class SettingsDialog(QDialog):
         self.tab_widget = QTabWidget()
         
         # Create tabs
+        self.serial_tab = SerialTab()
         self.general_tab = GeneralTab()
         self.output_tab = OutputTab()
         self.windows_tab = WindowsTab(self)  # Pass parent dialog reference
         
         # Add tabs
+        self.tab_widget.addTab(self.serial_tab, "Serial")
         self.tab_widget.addTab(self.general_tab, "General")
         self.tab_widget.addTab(self.output_tab, "Terminal")
         self.tab_widget.addTab(self.windows_tab, "Window")
@@ -426,10 +514,6 @@ class SettingsDialog(QDialog):
         # Load current settings
         self.settings = self.load_settings()
 
-        # Call parent's apply_settings if callback is provided
-        if self.on_settings_changed:
-            self.on_settings_changed(self.settings)
-
     def load_settings(self):
         """Load settings from YAML file"""
         if not self.settings_path or not os.path.exists(self.settings_path):
@@ -439,7 +523,8 @@ class SettingsDialog(QDialog):
                 'theme': 'default',
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'terminal': {'line_ending': 'CR+LF'},
-                'general': {'save_directory': '', 'auto_save_enabled': False}
+                'general': {'save_directory': '', 'auto_save_enabled': False},
+                'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'}
             }
         else:
             try:
@@ -472,6 +557,7 @@ class SettingsDialog(QDialog):
                 settings.setdefault('output_window', {'show_line_numbers': False, 'show_time': False})
                 settings.setdefault('terminal', {'line_ending': 'CR+LF'})
                 settings.setdefault('general', {'save_directory': '', 'auto_save_enabled': False})
+                settings.setdefault('serial', {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'})
                 
             except Exception as e:
                 print(f"Error loading settings: {e}")
@@ -480,10 +566,12 @@ class SettingsDialog(QDialog):
                     'theme': 'default',
                     'output_window': {'show_line_numbers': False, 'show_time': False},
                     'terminal': {'line_ending': 'CR+LF'},
-                    'general': {'save_directory': '', 'auto_save_enabled': False}
+                    'general': {'save_directory': '', 'auto_save_enabled': False},
+                    'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'}
                 }
         
         # Load settings into tabs
+        self.serial_tab.load_settings(settings)
         self.general_tab.load_settings(settings)
         self.output_tab.load_settings(settings)
         self.windows_tab.load_settings(settings)
@@ -496,6 +584,7 @@ class SettingsDialog(QDialog):
             return
         
         # Update settings from tabs
+        self.serial_tab.save_settings(self.settings)
         self.general_tab.save_settings(self.settings)
         self.output_tab.save_settings(self.settings)
         self.windows_tab.save_settings(self.settings)
@@ -522,6 +611,7 @@ class SettingsDialog(QDialog):
             data['output_window'] = self.settings['output_window']
             data['terminal'] = self.settings['terminal']
             data['general'] = self.settings.get('general', {'save_directory': '', 'auto_save_enabled': False})
+            data['serial'] = self.settings.get('serial', {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'})
             
             if 'command_group_count' in self.settings:
                 data['command_group_count'] = self.settings['command_group_count']

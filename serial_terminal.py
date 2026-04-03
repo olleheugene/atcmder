@@ -106,6 +106,8 @@ class SerialTerminal(QMainWindow):
         self.recent_ports = self.load_recent_ports()
         self.selected_port = port or ""
         self.baudrate = baudrate
+        self.flow_control = 'None'
+        self.parity = 'None'
         self.status = self.statusBar()
         self.update_status_bar("Disconnected")
         
@@ -976,10 +978,11 @@ class SerialTerminal(QMainWindow):
         settings = {
             "port": port,
             "baudrate": self.baudrate,
-            "parity": getattr(self, "parity", "N"),
+            "parity": self.parity,
             "stopbits": getattr(self, "stopbits", 1),
             "bytesize": getattr(self, "bytesize", 8),
-            "timeout": getattr(self, "timeout", 0.1)
+            "timeout": getattr(self, "timeout", 0.1),
+            "flow_control": self.flow_control
         }
         ports = [{"settings": settings, "index": 0}] + [
             {"settings": p["settings"], "index": i+1} for i, p in enumerate(ports[:4])
@@ -1570,8 +1573,33 @@ class SerialTerminal(QMainWindow):
             self.connect_btn.setText("Connect")
             self.connect_btn.setToolTip(f"Connect Serial Port")
         else:
+            if not self.selected_port:
+                self.update_status_bar("Error: No port selected")
+                self.connect_btn.setChecked(False)
+                return
             try:
-                self.serial = serial.Serial(self.selected_port, self.baudrate, timeout=0.1)
+                rtscts = (self.flow_control == 'RTS/CTS (Hardware)')
+                xonxoff = (self.flow_control == 'XON/XOFF (Software)')
+
+                parity_map = {
+                    'None': serial.PARITY_NONE,
+                    'Even': serial.PARITY_EVEN,
+                    'Odd': serial.PARITY_ODD,
+                    'Mark': serial.PARITY_MARK,
+                    'Space': serial.PARITY_SPACE
+                }
+                
+                # Create and configure serial port
+                self.serial = serial.Serial()
+                self.serial.port = self.selected_port
+                self.serial.baudrate = self.baudrate
+                self.serial.parity = parity_map.get(self.parity, serial.PARITY_NONE)
+                self.serial.timeout = 0.1
+                self.serial.rtscts = rtscts
+                self.serial.xonxoff = xonxoff
+                
+                self.serial.open()
+                
                 self.running = True
                 self.thread = threading.Thread(target=self.read_serial_data, daemon=True)
                 self.thread.start()
@@ -1580,8 +1608,12 @@ class SerialTerminal(QMainWindow):
                 self.connect_btn.setText("Disconnect")
                 self.save_recent_port(self.selected_port)  # Save recent port
                 self.connect_btn.setToolTip(f"Disconnect Serial Port")
-            except serial.SerialException as e:
-                QMessageBox.critical(self, "Connection Error", str(e))
+            except (serial.SerialException, Exception) as e:
+                error_msg = str(e)
+                if "Invalid argument" in error_msg:
+                    error_msg = f"Invalid argument: Port '{self.selected_port}' may not support baudrate {self.baudrate} or the selected Flow Control."
+                QMessageBox.critical(self, "Connection Error", f"Failed to open {self.selected_port}:\n{error_msg}")
+                self.connect_btn.setChecked(False)
 
     def refresh_serial_ports(self, auto_connect=False):
         current_port = self.serial_port_combo.currentText()
@@ -1596,10 +1628,15 @@ class SerialTerminal(QMainWindow):
         if auto_connect:
             # Auto-connect to available ports in order of recent port list index
             for entry in self.recent_ports:
-                port_candidate = entry["settings"].get("port", "").strip()
+                port_settings = entry.get("settings", {})
+                port_candidate = port_settings.get("port", "").strip()
                 if port_candidate and port_candidate in ports:
                     self.serial_port_combo.setCurrentText(port_candidate)
                     self.selected_port = port_candidate
+                    self.baudrate = port_settings.get("baudrate", self.baudrate)
+                    self.baudrate_combo.setCurrentText(str(self.baudrate))
+                    self.parity = port_settings.get("parity", "None")
+                    self.flow_control = port_settings.get("flow_control", "None")
                     self.toggle_serial_connection()
                     break
             else:
@@ -2433,6 +2470,46 @@ class SerialTerminal(QMainWindow):
         # Force UI update
         self.terminal_widget.update_scrollbar()
         self.terminal_widget.viewport().update()
+        
+        # Apply serial settings
+        serial_settings = settings.get('serial', {})
+        is_serial_setting_changed = False
+        
+        new_port = serial_settings.get('port', self.selected_port)
+        if self.selected_port != new_port:
+            self.selected_port = new_port
+            self.serial_port_combo.setCurrentText(self.selected_port)
+            is_serial_setting_changed = True
+            
+        new_baudrate = int(serial_settings.get('baudrate', self.baudrate))
+        if self.baudrate != new_baudrate:
+            self.baudrate = new_baudrate
+            self.baudrate_combo.setCurrentText(str(self.baudrate))
+            is_serial_setting_changed = True
+            
+        new_parity = serial_settings.get('parity', self.parity)
+        if self.parity != new_parity:
+            self.parity = new_parity
+            is_serial_setting_changed = True
+
+        new_flow_control = serial_settings.get('flow_control', self.flow_control)
+        if self.flow_control != new_flow_control:
+            self.flow_control = new_flow_control
+            is_serial_setting_changed = True
+            
+        if self.serial and self.serial.is_open and is_serial_setting_changed:
+            self.toggle_serial_connection() # disconnect
+            QTimer.singleShot(100, self.toggle_serial_connection) # reconnect
+        
+        self.update_ext_cmd_tooltip()
+
+    def update_ext_cmd_tooltip(self):
+        """Update the tooltip of the external command button with the current command."""
+        cmd = self.settings.get('general', {}).get('external_command', '').strip()
+        if cmd:
+            self.ext_cmd_btn.setToolTip(f"Run External Shell Command:\n{cmd}")
+        else:
+            self.ext_cmd_btn.setToolTip("Run External Shell Command\n(No command configured)")
 
     def load_settings(self):
         """Load settings from YAML file"""
@@ -2455,7 +2532,8 @@ class SerialTerminal(QMainWindow):
                 'theme': 'default',  # Keep as string for consistency
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100},
-                'keep_hex_mode': False
+                'keep_hex_mode': False,
+                'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'}
             }
             
             # Merge with defaults
@@ -2477,7 +2555,8 @@ class SerialTerminal(QMainWindow):
                 'theme': 'default',  # Keep as string
                 'output_window': {'show_line_numbers': False, 'show_time': False},
                 'history': {'max_entries': 100},
-                'keep_hex_mode': False
+                'keep_hex_mode': False,
+                'serial': {'port': '', 'baudrate': 115200, 'flow_control': 'None', 'parity': 'None'}
             }
 
     def apply_initial_settings(self):
@@ -2511,6 +2590,15 @@ class SerialTerminal(QMainWindow):
             self.line_ending = "\n"
         else:
             self.line_ending = "\r\n"  # Default to CR+LF
+        
+        # Apply serial settings
+        serial_settings = self.settings.get('serial', {})
+        self.selected_port = serial_settings.get('port', self.selected_port)
+        self.baudrate = int(serial_settings.get('baudrate', self.baudrate))
+        self.parity = serial_settings.get('parity', 'None')
+        self.flow_control = serial_settings.get('flow_control', 'None')
+        self.serial_port_combo.setCurrentText(self.selected_port)
+        self.baudrate_combo.setCurrentText(str(self.baudrate))
         
         # Update UI elements
         self.terminal_widget.update_scrollbar()
