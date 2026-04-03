@@ -2620,6 +2620,8 @@ class SerialTerminal(QMainWindow):
         self.terminal_widget.update_scrollbar()
         self.terminal_widget.viewport().update()
         
+        self.update_ext_cmd_tooltip()
+        
         print(f"Initial settings applied - Line numbers: {self.settings['output_window']['show_line_numbers']}, Timestamps: {self.settings['output_window']['show_time']}")
 
     def show_about_dialog(self): 
